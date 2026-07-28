@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+
+import sys
+
+from pathlib import Path
+
+from commands import status
+
+#
+# Directorio raíz:
+# /home/dd/git_repos
+#
+GIT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def usage():
+    print("Uso:")
+    print("  ws status <version> <workspace>")
+    sys.exit(1)
+
+
+def main():
+
+    if len(sys.argv) != 4:
+        usage()
+
+    command = sys.argv[1]
+    version = sys.argv[2]
+    workspace = sys.argv[3]
+
+    if command == "status":
+        status(GIT_ROOT, version, workspace)
+    else:
+        usage()
+
+
+if __name__ == "__main__":
+    main()
+
