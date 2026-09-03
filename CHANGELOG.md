@@ -7,6 +7,18 @@ interna, no un paquete publicado); las entradas se agrupan por fecha.
 
 ## [Unreleased]
 
+## [2026-09-03] — status: fix falso "Unpushed" en ramas distintas a la esperada
+
+### Fixed
+- `ows status` reportaba commits "sin pushear" que en realidad sí estaban
+  en el remoto: cuando la rama actual no coincide con la esperada por el
+  manifest y no tiene upstream configurado, el fallback comparaba contra
+  `origin/<rama esperada>` en vez de `origin/<rama actual>` — cualquier
+  feature branch basada en la esperada (ej. `19.0`) se veía "adelantada"
+  por sus propios commits, aunque ya estuvieran pusheados a su propia
+  rama remota. Ahora el fallback siempre compara contra el remoto de la
+  rama en la que realmente estás.
+
 ## [2026-09-03] — status: muestra señales de sync
 
 ### Added

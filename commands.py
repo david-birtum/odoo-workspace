@@ -52,7 +52,7 @@ def status(git_root: Path, version: str, workspace: str):
 
         ahead, _behind, ahead_error = ahead_behind(
             repo_path,
-            fallback_ref=f"origin/{expected}",
+            fallback_ref=f"origin/{current}",
         )
 
         dirty, _dirty_error = is_dirty(repo_path)
