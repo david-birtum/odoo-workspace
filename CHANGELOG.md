@@ -7,6 +7,8 @@ interna, no un paquete publicado); las entradas se agrupan por fecha.
 
 ## [Unreleased]
 
+## [2026-09-03] — `17a6afe`
+
 ### Added
 - `ows sync <version> <workspace>`: actualiza automáticamente
   (`git pull --ff-only`) los repos que están en la rama esperada, sin
