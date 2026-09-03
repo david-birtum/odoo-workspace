@@ -5,6 +5,7 @@ def print_repo_status(
     current: Optional[str] = None,
     expected: Optional[str] = None,
     error: Optional[str] = None,
+    ahead: Optional[int] = None,
 ) -> None:
     """
     Imprime el estado de un repositorio del workspace.
@@ -28,5 +29,34 @@ def print_repo_status(
         print(f"    Current  : {current}")
         print(f"    Expected : {expected}")
 
+    if ahead:
+        print(f"    Unpushed : {ahead} commit(s)")
+
     print()
-    
+
+
+def print_sync_result(
+    repo: str,
+    status: str,
+    reason: Optional[str] = None,
+) -> None:
+    """
+    Imprime el resultado de intentar sincronizar (pull) un repositorio.
+    """
+
+    icons = {
+        "updated": "✅",
+        "up-to-date": "✅",
+        "skipped": "⏭️ ",
+        "failed": "❌",
+    }
+
+    icon = icons.get(status, "•")
+
+    print(f"{icon} {repo:<30} {status}", end="")
+
+    if reason:
+        print(f" — {reason}", end="")
+
+    print()
+
