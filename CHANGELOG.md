@@ -7,6 +7,15 @@ interna, no un paquete publicado); las entradas se agrupan por fecha.
 
 ## [Unreleased]
 
+## [2026-09-03] — status: muestra señales de sync
+
+### Added
+- `ows status` ahora muestra también si el repo tiene cambios sin
+  commitear (`Tree : Uncommitted changes`), la misma señal que usa
+  `ows sync` para decidir si puede actualizarlo solo — junto con el
+  conteo de commits sin pushear que ya mostraba, deja ver de un vistazo
+  si un repo calificaría para `sync` sin tener que correrlo.
+
 ## [2026-09-03] — `17a6afe`
 
 ### Added

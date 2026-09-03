@@ -49,8 +49,10 @@ necesita configuración.
 ### `ows status <version> <workspace>`
 
 Compara, repo por repo, la rama actual contra la esperada en el manifest.
-También muestra si el repo tiene commits locales sin pushear (no requiere red:
-compara contra el último estado remoto conocido).
+También muestra, sin tocar el repo ni requerir red, la misma información
+que usa `ows sync` para decidir si puede actualizarlo solo: si tiene
+cambios sin commitear y si tiene commits locales sin pushear (esto último
+compara contra el último estado remoto conocido, no hace fetch).
 
 ```
 $ ows status 19 BESTWAY
@@ -61,6 +63,11 @@ $ ows status 19 BESTWAY
 ⚠️  addons-account
     Current  : IMP_b_custom_codes_balance-...-19.0
     Expected : 19.0
+    Unpushed : 1 commit(s)
+
+✅ addons-pos
+    Branch   : 19.0-BESTWAY
+    Tree     : Uncommitted changes
 ```
 
 ### `ows current <version>`

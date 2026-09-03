@@ -6,6 +6,7 @@ def print_repo_status(
     expected: Optional[str] = None,
     error: Optional[str] = None,
     ahead: Optional[int] = None,
+    dirty: Optional[bool] = None,
 ) -> None:
     """
     Imprime el estado de un repositorio del workspace.
@@ -28,6 +29,9 @@ def print_repo_status(
         print(f"⚠️  {repo}")
         print(f"    Current  : {current}")
         print(f"    Expected : {expected}")
+
+    if dirty:
+        print("    Tree     : Uncommitted changes")
 
     if ahead:
         print(f"    Unpushed : {ahead} commit(s)")

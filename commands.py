@@ -55,11 +55,14 @@ def status(git_root: Path, version: str, workspace: str):
             fallback_ref=f"origin/{expected}",
         )
 
+        dirty, _dirty_error = is_dirty(repo_path)
+
         print_repo_status(
             repo=repo,
             current=current,
             expected=expected,
             ahead=None if ahead_error else ahead,
+            dirty=dirty,
         )
 
 def sync(git_root: Path, version: str, workspace: str):
