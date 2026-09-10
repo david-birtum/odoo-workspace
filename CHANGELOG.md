@@ -7,6 +7,14 @@ interna, no un paquete publicado); las entradas se agrupan por fecha.
 
 ## [Unreleased]
 
+## [2026-09-10] — status: ícono amarillo para "rama correcta pero no listo para sync"
+
+### Changed
+- `ows status` ya no marca ✅ a un repo con la rama correcta si tiene
+  cambios sin commitear o commits sin pushear — ahora usa 🟡 para
+  distinguir "rama correcta pero bloqueado para `sync`" de "listo de
+  verdad" (✅). ⚠️ se queda exclusivo para rama distinta a la esperada.
+
 ## [2026-09-03] — status: fix falso "Unpushed" en ramas distintas a la esperada
 
 ### Fixed

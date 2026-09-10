@@ -54,6 +54,14 @@ que usa `ows sync` para decidir si puede actualizarlo solo: si tiene
 cambios sin commitear y si tiene commits locales sin pushear (esto último
 compara contra el último estado remoto conocido, no hace fetch).
 
+El ícono indica de un vistazo si el repo calificaría para `ows sync`:
+
+| Ícono | Significado |
+|-------|-------------|
+| ✅ | Rama correcta, limpio, nada por pushear — `sync` no tendría nada que hacer o lo actualizaría sin drama. |
+| 🟡 | Rama correcta, pero algo bloquearía el `sync` (cambios sin commitear y/o commits sin pushear). |
+| ⚠️ | Rama distinta a la esperada por el manifest. |
+
 ```
 $ ows status 19 BESTWAY
 
@@ -63,9 +71,8 @@ $ ows status 19 BESTWAY
 ⚠️  addons-account
     Current  : IMP_b_custom_codes_balance-...-19.0
     Expected : 19.0
-    Unpushed : 1 commit(s)
 
-✅ addons-pos
+🟡 addons-pos
     Branch   : 19.0-BESTWAY
     Tree     : Uncommitted changes
 ```

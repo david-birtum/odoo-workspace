@@ -22,13 +22,16 @@ def print_repo_status(
         print()
         return
 
-    if current == expected:
-        print(f"✅ {repo}")
-        print(f"    Branch   : {current}")
-    else:
+    if current != expected:
         print(f"⚠️  {repo}")
         print(f"    Current  : {current}")
         print(f"    Expected : {expected}")
+    elif dirty or ahead:
+        print(f"🟡 {repo}")
+        print(f"    Branch   : {current}")
+    else:
+        print(f"✅ {repo}")
+        print(f"    Branch   : {current}")
 
     if dirty:
         print("    Tree     : Uncommitted changes")
