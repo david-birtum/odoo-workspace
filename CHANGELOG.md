@@ -7,6 +7,18 @@ interna, no un paquete publicado); las entradas se agrupan por fecha.
 
 ## [Unreleased]
 
+## [2026-09-11] — ui: status local en el navegador
+
+### Added
+- `ows ui [port]`: UI web de solo lectura en `127.0.0.1:8765` (NiceGUI).
+  Muestra version/workspace, el ranking de `current` y la tabla de
+  `status`. No ejecuta switch/sync.
+- `service.py`: `collect_status` / `collect_current` para que CLI y UI
+  compartan los mismos datos.
+
+### Changed
+- `status` y `current` del CLI imprimen a partir de `service.py`.
+
 ## [2026-09-11] — switch: checkout a las ramas del manifest
 
 ### Added

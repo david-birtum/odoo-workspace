@@ -1,6 +1,6 @@
 from functools import partial
 from pathlib import Path
-from workspace import load_workspace, list_workspaces
+from workspace import load_workspace
 from gitutils import (
     current_branch,
     is_dirty,
@@ -12,65 +12,26 @@ from gitutils import (
 )
 from utils import print_repo_status, print_action_result
 from credentials import GitCredentials, run_with_fallback
+from service import collect_status, collect_current
 
 
 def status(git_root: Path, version: str, workspace: str):
 
-    data = load_workspace(
-        git_root,
-        version,
-        workspace,
-    )
+    payload = collect_status(git_root, version, workspace)
 
     print()
-    print(f"Workspace : {data['project']}")
-    print(f"Version   : {data['version']}")
+    print(f"Workspace : {payload['project']}")
+    print(f"Version   : {payload['version']}")
     print()
 
-    repositories = data.get("repositories", {})
-
-    for repo, info in repositories.items():
-
-        expected = str(info["branch"]).strip()
-
-        repo_path = (
-            git_root
-            / version
-            / "odoo"
-            / repo
-        )
-
-        if not repo_path.exists():
-            print_repo_status(
-                repo=repo,
-                expected=expected,
-                error="Repository not found",
-            )
-            continue
-
-        current, error = current_branch(repo_path)
-
-        if error:
-            print_repo_status(
-                repo=repo,
-                expected=expected,
-                error=f"Unable to get current branch: {error}",
-            )
-            continue
-
-        ahead, _behind, ahead_error = ahead_behind(
-            repo_path,
-            fallback_ref=f"origin/{current}",
-        )
-
-        dirty, _dirty_error = is_dirty(repo_path)
-
+    for row in payload["repos"]:
         print_repo_status(
-            repo=repo,
-            current=current,
-            expected=expected,
-            ahead=None if ahead_error else ahead,
-            dirty=dirty,
+            repo=row["repo"],
+            current=row["current"],
+            expected=row["expected"],
+            error=row["error"],
+            ahead=row["ahead"],
+            dirty=row["dirty"],
         )
 
 def sync(git_root: Path, version: str, workspace: str):
@@ -302,76 +263,14 @@ def switch(git_root: Path, version: str, workspace: str):
 
 def current(git_root: Path, version: str):
 
-    results = []
-
-    for manifest in list_workspaces(git_root, version):
-
-        workspace = manifest.stem
-
-        data = load_workspace(
-            git_root,
-            version,
-            workspace,
-        )
-
-        repositories = data.get("repositories", {})
-
-        total = len(repositories)
-        matches = 0
-        differences = []
-
-        for repo, info in repositories.items():
-
-            expected = str(info["branch"]).strip()
-
-            repo_path = (
-                git_root
-                / version
-                / "odoo"
-                / repo
-            )
-
-            if not repo_path.exists():
-                differences.append(
-                    (repo, "NOT FOUND", expected)
-                )
-                continue
-
-            current, error = current_branch(repo_path)
-
-            if error:
-                differences.append(
-                    (repo, f"ERROR: {error}", expected)
-                )
-                continue
-
-            if current == expected:
-                matches += 1
-            else:
-                differences.append(
-                    (repo, current, expected)
-                )
-
-        percentage = 0 if total == 0 else (matches / total) * 100
-
-        results.append({
-            "workspace": workspace,
-            "matches": matches,
-            "total": total,
-            "percentage": percentage,
-            "differences": differences,
-        })
+    payload = collect_current(git_root, version)
+    results = payload["results"]
 
     if not results:
         print()
         print(f"No workspace manifests found for version {version}.")
         print()
         return
-
-    results.sort(
-        key=lambda r: (r["percentage"], r["matches"]),
-        reverse=True,
-    )
 
     print()
     print("Workspace ranking")
@@ -403,9 +302,9 @@ def current(git_root: Path, version: str):
 
     print("Repositories with differences:\n")
 
-    for repo, current_branch_name, expected in best["differences"]:
+    for diff in best["differences"]:
 
-        print(f"⚠ {repo}")
-        print(f"    Current  : {current_branch_name}")
-        print(f"    Expected : {expected}")
+        print(f"⚠ {diff['repo']}")
+        print(f"    Current  : {diff['current']}")
+        print(f"    Expected : {diff['expected']}")
         print()

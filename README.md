@@ -33,16 +33,28 @@ repositories:
 
 ## Instalación
 
-El binario `ows` es un script Python (`#!/usr/bin/env python3`) ejecutable,
-con dependencia única de `pyyaml`. Instálalo en el PATH:
+El binario `ows` es un script Python (`#!/usr/bin/env python3`) ejecutable.
+El CLI solo necesita `pyyaml`; la UI web añade `nicegui`. Instálalo en el PATH:
 
 ```bash
+# CLI (pyyaml en el Python del sistema, o en un venv)
 pip install pyyaml
+
+# UI: venv local (Debian no deja usar pip sobre el Python del sistema)
+cd ~/git_repos/odoo-workspace
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
 ln -s ~/git_repos/odoo-workspace/ows ~/.local/bin/ows   # o el destino que uses
 ```
 
+`ows ui` reusa `.venv/bin/python` si existe, así no hace falta activar el venv.
+
 `GIT_ROOT` se calcula solo como el padre de este repo (`~/git_repos`); no
 necesita configuración.
+
+Apache (u otro servidor) en el puerto 80 no estorba: la UI escucha solo
+en `127.0.0.1:8765` (u otro puerto que pases).
 
 ## Comandos
 
@@ -121,6 +133,23 @@ ows switch 19 BESTWAY
 ows sync 19 BESTWAY
 ```
 
+### `ows ui [port]`
+
+Sirve una UI web **de solo lectura** en `http://127.0.0.1:8765` (o el
+puerto que indiques). Muestra el mismo `status` / `current` que el CLI.
+`switch` y `sync` siguen siendo comandos de terminal — el siguiente
+paso es cablearlos con confirmación.
+
+```
+$ ows ui
+OWS UI → http://127.0.0.1:8765  (Ctrl+C to stop)
+
+$ ows ui 8766
+```
+
+Requiere `nicegui` (`pip install nicegui`). No hace falta tocar Apache:
+son procesos distintos en puertos distintos.
+
 ### `ows sync <version> <workspace>`
 
 Actualiza automáticamente (`git pull --ff-only`) los repos que:
@@ -155,7 +184,9 @@ necesita.
 
 ```
 ows              # entrypoint: parseo de argv, usage()
-commands.py      # status(), current(), switch(), sync() — la lógica de cada comando
+service.py       # collect_status / collect_current — datos, sin print
+commands.py      # status(), current(), switch(), sync() — CLI sobre service
+ui.py            # NiceGUI: ows ui en 127.0.0.1:8765
 workspace.py     # lectura de manifests YAML
 gitutils.py      # wrappers sobre `git` (branch, checkout, fetch, pull, ahead/behind, dirty)
 credentials.py   # captura de usuario/token una sola vez para sync/switch, GIT_ASKPASS

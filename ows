@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import sys
 import traceback
 from pathlib import Path
@@ -23,6 +24,7 @@ Usage:
     ows current <version>
     ows switch  <version> <workspace>
     ows sync    <version> <workspace>
+    ows ui      [port]
 
 Commands:
     status      Compare current branches with a workspace manifest.
@@ -31,6 +33,7 @@ Commands:
                 touches a dirty or unpushed repo; does not pull).
     sync        Auto-update (git pull --ff-only) repos that are on the
                 expected branch, clean, and with nothing to push.
+    ui          Local web UI (read-only status) on 127.0.0.1:8765.
 
 Examples:
     ows status 19 BESTWAY
@@ -38,6 +41,8 @@ Examples:
     ows current 19
     ows switch 19 BESTWAY
     ows sync 19 BESTWAY
+    ows ui
+    ows ui 8766
 """
     )
     sys.exit(1)
@@ -90,6 +95,41 @@ def cmd_switch():
     )
 
 
+def cmd_ui():
+
+    port = 8765
+
+    if len(sys.argv) == 3:
+        try:
+            port = int(sys.argv[2])
+        except ValueError:
+            usage()
+    elif len(sys.argv) != 2:
+        usage()
+
+    here = Path(__file__).resolve().parent
+    venv_python = here / ".venv" / "bin" / "python"
+    in_venv = Path(sys.prefix).resolve() == (here / ".venv").resolve()
+
+    if venv_python.exists() and not in_venv:
+        os.execv(
+            str(venv_python),
+            [str(venv_python), str(here / "ows"), *sys.argv[1:]],
+        )
+
+    try:
+        from ui import start_ui
+    except ImportError:
+        print(
+            "ows ui requires nicegui. "
+            "From this repo: python3 -m venv .venv && "
+            ".venv/bin/pip install -r requirements.txt"
+        )
+        sys.exit(1)
+
+    start_ui(GIT_ROOT, port=port)
+
+
 def main():
 
     if len(sys.argv) < 2:
@@ -108,6 +148,9 @@ def main():
 
     elif command == "switch":
         cmd_switch()
+
+    elif command == "ui":
+        cmd_ui()
 
     else:
         usage()
