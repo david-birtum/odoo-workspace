@@ -16,7 +16,7 @@ class GitCredentials:
     """
     Captura usuario y token de git una sola vez y los reutiliza para
     todas las llamadas de red (fetch/pull) de una misma corrida de
-    ``ows sync``.
+    ``ows sync`` o ``ows switch``.
 
     Las credenciales se piden de forma perezosa: solo en el primer
     repositorio que realmente las necesita, no al arrancar el comando.
@@ -125,7 +125,7 @@ def run_with_fallback(operation, repo_path, credentials):
     transparente. Solo si el error indica que faltó usuario/token
     (``needs_credentials``), reintenta una vez usando las credenciales
     capturadas por ``credentials`` (pedidas por primera vez aquí si
-    esta corrida de ``sync`` aún no las había necesitado).
+    esta corrida aún no las había necesitado).
 
     :param callable operation: ``fetch``/``pull_ff_only`` u otra función
         con firma ``(repo_path, env=None) -> (output, error)``.

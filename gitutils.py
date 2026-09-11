@@ -100,6 +100,35 @@ def fetch(repo_path, branch=None, env=None):
     return git(repo_path, "fetch", env=env)
 
 
+def local_branch_exists(repo_path, branch):
+    """
+    :return: ``True`` si ``refs/heads/<branch>`` existe en el repo.
+    :rtype: bool
+    """
+
+    _, error = git(
+        repo_path,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        f"refs/heads/{branch}",
+    )
+
+    return error is None
+
+
+def checkout(repo_path, branch, env=None):
+    """
+    ``git checkout <branch>``. Si la rama no existe en local pero sí
+    como ``origin/<branch>`` (el caller debe haber hecho fetch), git
+    crea la rama local con tracking (DWIM de checkout).
+
+    :param str branch: rama a dejar como HEAD.
+    """
+
+    return git(repo_path, "checkout", branch, env=env)
+
+
 def pull_ff_only(repo_path, branch=None, env=None):
     """
     ``git pull --ff-only``. Si se da ``branch``, especifica ``origin``

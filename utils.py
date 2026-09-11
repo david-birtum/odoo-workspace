@@ -42,18 +42,20 @@ def print_repo_status(
     print()
 
 
-def print_sync_result(
+def print_action_result(
     repo: str,
     status: str,
     reason: Optional[str] = None,
 ) -> None:
     """
-    Imprime el resultado de intentar sincronizar (pull) un repositorio.
+    Imprime el resultado de una acción por repositorio (sync, switch).
     """
 
     icons = {
         "updated": "✅",
         "up-to-date": "✅",
+        "switched": "✅",
+        "already-on-branch": "✅",
         "skipped": "⏭️ ",
         "failed": "❌",
     }

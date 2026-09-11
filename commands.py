@@ -1,8 +1,16 @@
 from functools import partial
 from pathlib import Path
 from workspace import load_workspace, list_workspaces
-from gitutils import current_branch, is_dirty, ahead_behind, fetch, pull_ff_only
-from utils import print_repo_status, print_sync_result
+from gitutils import (
+    current_branch,
+    is_dirty,
+    ahead_behind,
+    fetch,
+    pull_ff_only,
+    local_branch_exists,
+    checkout,
+)
+from utils import print_repo_status, print_action_result
 from credentials import GitCredentials, run_with_fallback
 
 
@@ -99,20 +107,20 @@ def sync(git_root: Path, version: str, workspace: str):
             )
 
             if not repo_path.exists():
-                print_sync_result(repo, "skipped", "Repository not found")
+                print_action_result(repo, "skipped", "Repository not found")
                 continue
 
             current, error = current_branch(repo_path)
 
             if error:
-                print_sync_result(
+                print_action_result(
                     repo, "skipped",
                     f"Unable to get current branch: {error}",
                 )
                 continue
 
             if current != expected:
-                print_sync_result(
+                print_action_result(
                     repo, "skipped",
                     f"On branch '{current}', expected '{expected}'",
                 )
@@ -121,14 +129,14 @@ def sync(git_root: Path, version: str, workspace: str):
             dirty, error = is_dirty(repo_path)
 
             if error:
-                print_sync_result(
+                print_action_result(
                     repo, "skipped",
                     f"Unable to check working tree: {error}",
                 )
                 continue
 
             if dirty:
-                print_sync_result(
+                print_action_result(
                     repo, "skipped",
                     "Uncommitted changes in working tree",
                 )
@@ -141,7 +149,7 @@ def sync(git_root: Path, version: str, workspace: str):
             )
 
             if error:
-                print_sync_result(repo, "skipped", f"Unable to fetch: {error}")
+                print_action_result(repo, "skipped", f"Unable to fetch: {error}")
                 continue
 
             ahead, behind, error = ahead_behind(
@@ -150,21 +158,21 @@ def sync(git_root: Path, version: str, workspace: str):
             )
 
             if error:
-                print_sync_result(
+                print_action_result(
                     repo, "skipped",
                     f"No upstream configured or unable to compare: {error}",
                 )
                 continue
 
             if ahead:
-                print_sync_result(
+                print_action_result(
                     repo, "skipped",
                     f"{ahead} unpushed commit(s)",
                 )
                 continue
 
             if behind == 0:
-                print_sync_result(repo, "up-to-date")
+                print_action_result(repo, "up-to-date")
                 continue
 
             _, error = run_with_fallback(
@@ -174,14 +182,123 @@ def sync(git_root: Path, version: str, workspace: str):
             )
 
             if error:
-                print_sync_result(repo, "failed", error)
+                print_action_result(repo, "failed", error)
                 continue
 
-            print_sync_result(repo, "updated", f"{behind} commit(s) pulled")
+            print_action_result(repo, "updated", f"{behind} commit(s) pulled")
     finally:
         credentials.cleanup()
 
     print()
+
+
+def switch(git_root: Path, version: str, workspace: str):
+    """
+    Cambia (git checkout) cada repo del workspace a la rama esperada
+    por el manifest. No toca repos con cambios sin commitear ni con
+    commits locales sin pushear. No hace pull — eso es ``sync``.
+    """
+
+    data = load_workspace(
+        git_root,
+        version,
+        workspace,
+    )
+
+    print()
+    print(f"Workspace : {data['project']}")
+    print(f"Version   : {data['version']}")
+    print()
+
+    repositories = data.get("repositories", {})
+    credentials = GitCredentials()
+
+    try:
+        for repo, info in repositories.items():
+
+            expected = str(info["branch"]).strip()
+
+            repo_path = (
+                git_root
+                / version
+                / "odoo"
+                / repo
+            )
+
+            if not repo_path.exists():
+                print_action_result(repo, "skipped", "Repository not found")
+                continue
+
+            current, error = current_branch(repo_path)
+
+            if error:
+                print_action_result(
+                    repo, "skipped",
+                    f"Unable to get current branch: {error}",
+                )
+                continue
+
+            if current == expected:
+                print_action_result(repo, "already-on-branch")
+                continue
+
+            dirty, error = is_dirty(repo_path)
+
+            if error:
+                print_action_result(
+                    repo, "skipped",
+                    f"Unable to check working tree: {error}",
+                )
+                continue
+
+            if dirty:
+                print_action_result(
+                    repo, "skipped",
+                    "Uncommitted changes in working tree",
+                )
+                continue
+
+            ahead, _behind, ahead_error = ahead_behind(
+                repo_path,
+                fallback_ref=f"origin/{current}",
+            )
+
+            if not ahead_error and ahead:
+                print_action_result(
+                    repo, "skipped",
+                    f"{ahead} unpushed commit(s) on '{current}'",
+                )
+                continue
+
+            if not local_branch_exists(repo_path, expected):
+                _, error = run_with_fallback(
+                    partial(fetch, branch=expected),
+                    repo_path,
+                    credentials,
+                )
+
+                if error:
+                    print_action_result(
+                        repo, "skipped",
+                        f"Unable to fetch '{expected}': {error}",
+                    )
+                    continue
+
+            _, error = checkout(repo_path, expected)
+
+            if error:
+                print_action_result(repo, "failed", error)
+                continue
+
+            print_action_result(
+                repo, "switched",
+                f"'{current}' → '{expected}'",
+            )
+    finally:
+        credentials.cleanup()
+
+    print()
+
 
 def current(git_root: Path, version: str):
 

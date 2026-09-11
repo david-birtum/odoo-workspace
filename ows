@@ -4,7 +4,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from commands import status, current, sync
+from commands import status, current, sync, switch
 
 #
 # Directorio raíz:
@@ -21,11 +21,14 @@ OWS - Odoo Workspace Manager
 Usage:
     ows status  <version> <workspace>
     ows current <version>
+    ows switch  <version> <workspace>
     ows sync    <version> <workspace>
 
 Commands:
     status      Compare current branches with a workspace manifest.
     current     Show a ranking of workspaces based on current branches.
+    switch      Checkout the expected branch on each repo (never
+                touches a dirty or unpushed repo; does not pull).
     sync        Auto-update (git pull --ff-only) repos that are on the
                 expected branch, clean, and with nothing to push.
 
@@ -33,6 +36,7 @@ Examples:
     ows status 19 BESTWAY
     ows status 19 PRISSA
     ows current 19
+    ows switch 19 BESTWAY
     ows sync 19 BESTWAY
 """
     )
@@ -73,6 +77,19 @@ def cmd_sync():
         sys.argv[3],
     )
 
+
+def cmd_switch():
+
+    if len(sys.argv) != 4:
+        usage()
+
+    switch(
+        GIT_ROOT,
+        sys.argv[2],
+        sys.argv[3],
+    )
+
+
 def main():
 
     if len(sys.argv) < 2:
@@ -88,6 +105,9 @@ def main():
 
     elif command == "sync":
         cmd_sync()
+
+    elif command == "switch":
+        cmd_switch()
 
     else:
         usage()

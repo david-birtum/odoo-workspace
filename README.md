@@ -94,6 +94,33 @@ $ ows current 19
 Current workspace: PRISSA
 ```
 
+### `ows switch <version> <workspace>`
+
+Deja cada repo del manifest en la rama esperada (`git checkout`).
+Misma política de seguridad que `sync`: no toca un repo sucio ni uno
+con commits locales sin pushear. **No hace pull** — eso sigue siendo
+`ows sync`.
+
+Si la rama esperada ya está en local, el checkout es offline. Solo
+hace fetch (con el mismo fallback de credenciales que `sync`) cuando
+la rama no existe en disco.
+
+```
+$ ows switch 19 BESTWAY
+
+✅ BESTWAY                       already-on-branch
+✅ addons-l10n_mx                switched — '19.0' → '19.0-BESTWAY'
+⏭️  addons-account                 skipped — 2 unpushed commit(s) on 'IMP_...'
+⏭️  addons-pos                     skipped — Uncommitted changes in working tree
+```
+
+El flujo típico al cambiar de cliente:
+
+```
+ows switch 19 BESTWAY
+ows sync 19 BESTWAY
+```
+
 ### `ows sync <version> <workspace>`
 
 Actualiza automáticamente (`git pull --ff-only`) los repos que:
@@ -117,8 +144,9 @@ $ ows sync 19 BESTWAY
 ```
 
 **Credenciales:** si tus repos son HTTPS y no tienes SSH key / credential
-helper configurado, `sync` te pide usuario y token **una sola vez por
-corrida** (no se guardan a disco) y los reutiliza en el resto de los repos.
+helper configurado, `sync` y `switch` (solo si hay que fetchear una rama
+que no está en local) te piden usuario y token **una sola vez por
+corrida** (no se guardan a disco) y los reutilizan en el resto de los repos.
 Si ya tienes SSH configurado, no pregunta nada — el primer intento siempre
 es sin forzar credenciales, y solo cae al prompt propio si git realmente lo
 necesita.
@@ -127,18 +155,18 @@ necesita.
 
 ```
 ows              # entrypoint: parseo de argv, usage()
-commands.py      # status(), current(), sync() — la lógica de cada comando
+commands.py      # status(), current(), switch(), sync() — la lógica de cada comando
 workspace.py     # lectura de manifests YAML
-gitutils.py      # wrappers sobre `git` (branch, fetch, pull, ahead/behind, dirty)
-credentials.py   # captura de usuario/token una sola vez para sync, GIT_ASKPASS
-utils.py         # funciones de impresión (print_repo_status, print_sync_result)
+gitutils.py      # wrappers sobre `git` (branch, checkout, fetch, pull, ahead/behind, dirty)
+credentials.py   # captura de usuario/token una sola vez para sync/switch, GIT_ASKPASS
+utils.py         # funciones de impresión (print_repo_status, print_action_result)
 ```
 
 ## Limitaciones conocidas
 
 - Varios repos del workspace tienen `remote.origin.fetch` fijo a una rama
   distinta de la que realmente usan (config heredada de un clone anterior).
-  `sync` lo sortea haciendo fetch explícito de la rama esperada, pero un
+  `sync` y `switch` lo sortean haciendo fetch explícito de la rama esperada, pero un
   `git fetch` manual fuera de `ows` seguirá sin traer esa rama. Corregir esto
   de raíz (y detectar otros repos en la misma situación) queda pendiente para
   un futuro comando de diagnóstico (`ows doctor`, ver CHANGELOG).

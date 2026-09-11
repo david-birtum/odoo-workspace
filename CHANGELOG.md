@@ -7,6 +7,20 @@ interna, no un paquete publicado); las entradas se agrupan por fecha.
 
 ## [Unreleased]
 
+## [2026-09-11] — switch: checkout a las ramas del manifest
+
+### Added
+- `ows switch <version> <workspace>`: deja cada repo en la rama que
+  declara el manifest (`git checkout`). No toca repos con cambios sin
+  commitear ni con commits locales sin pushear; no hace pull (eso
+  sigue siendo `sync`). Si la rama esperada no existe en local, la
+  trae con el mismo fetch explícito y fallback de credenciales que
+  `sync`.
+
+### Changed
+- `print_sync_result` pasó a llamarse `print_action_result` — la usa
+  tanto `sync` como `switch`.
+
 ## [2026-09-10] — status: ícono amarillo para "rama correcta pero no listo para sync"
 
 ### Changed
