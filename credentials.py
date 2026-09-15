@@ -12,6 +12,10 @@ esac
 """
 
 
+class CredentialRequired(Exception):
+    """Faltan credenciales y no hay terminal interactivo (p. ej. UI web)."""
+
+
 class GitCredentials:
     """
     Captura usuario y token de git una sola vez y los reutiliza para
@@ -23,9 +27,14 @@ class GitCredentials:
     Nunca se escriben a disco: viajan en variables de entorno del
     proceso y las lee, en tiempo real, un script auxiliar (GIT_ASKPASS)
     que se borra al terminar la corrida.
+
+    Si se pasa ``provider``, se invoca en lugar del prompt por
+    terminal. Debe devolver ``(username, token)`` o ``(None, None)`` si
+    aún no hay credenciales — en ese caso se lanza ``CredentialRequired``.
     """
 
-    def __init__(self):
+    def __init__(self, provider=None):
+        self._provider = provider
         self._env = None
         self._askpass_path = None
 
@@ -43,12 +52,7 @@ class GitCredentials:
 
         return self._env
 
-    def _prompt_and_build_env(self):
-
-        print()
-        print("🔐 Git credentials (una sola vez para esta corrida, no se guardan):")
-        username = input("    Username : ").strip()
-        token = getpass.getpass("    Token    : ")
+    def _build_env(self, username, token):
 
         fd, path = tempfile.mkstemp(prefix="ows_askpass_")
 
@@ -65,6 +69,23 @@ class GitCredentials:
         env["OWS_GIT_TOKEN"] = token
 
         return env
+
+    def _prompt_and_build_env(self):
+
+        if self._provider is not None:
+            username, token = self._provider()
+
+            if not username or not token:
+                raise CredentialRequired()
+
+            return self._build_env(username.strip(), token)
+
+        print()
+        print("🔐 Git credentials (una sola vez para esta corrida, no se guardan):")
+        username = input("    Username : ").strip()
+        token = getpass.getpass("    Token    : ")
+
+        return self._build_env(username, token)
 
     def cleanup(self):
         """Borra el script temporal de askpass, si se llegó a crear."""

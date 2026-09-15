@@ -7,6 +7,21 @@ interna, no un paquete publicado); las entradas se agrupan por fecha.
 
 ## [Unreleased]
 
+## [2026-09-14] — ui: switch, sync y ranking en el navegador
+
+### Added
+- Botones **Switch** y **Sync** en la UI con diálogo de confirmación y
+  tabla de resultados por repo (misma lógica que el CLI).
+- Panel **Workspace ranking** (`current`) expandible.
+- Campos opcionales username/token para HTTPS cuando no hay SSH ni
+  credential helper (`CredentialRequired` en lugar de prompt por terminal).
+
+### Changed
+- `collect_sync` / `collect_switch` viven en `service.py`; el CLI solo
+  imprime.
+- `GitCredentials` acepta un `provider` opcional (UI web).
+- La UI ya no abre el navegador automáticamente (`show=False`).
+
 ## [2026-09-11] — ui: status local en el navegador
 
 ### Added

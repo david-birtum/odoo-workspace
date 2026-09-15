@@ -1,18 +1,6 @@
-from functools import partial
 from pathlib import Path
-from workspace import load_workspace
-from gitutils import (
-    current_branch,
-    is_dirty,
-    ahead_behind,
-    fetch,
-    pull_ff_only,
-    local_branch_exists,
-    checkout,
-)
 from utils import print_repo_status, print_action_result
-from credentials import GitCredentials, run_with_fallback
-from service import collect_status, collect_current
+from service import collect_status, collect_current, collect_sync, collect_switch
 
 
 def status(git_root: Path, version: str, workspace: str):
@@ -34,6 +22,27 @@ def status(git_root: Path, version: str, workspace: str):
             dirty=row["dirty"],
         )
 
+
+def _print_action_payload(payload: dict):
+
+    print()
+    print(f"Workspace : {payload['project']}")
+    print(f"Version   : {payload['version']}")
+    print()
+
+    for row in payload["results"]:
+        print_action_result(row["repo"], row["status"], row.get("reason"))
+
+    if payload.get("needs_credentials"):
+        print()
+        print(
+            "Some repos were skipped because Git credentials are required. "
+            "Fill username/token in the UI or run from a terminal."
+        )
+
+    print()
+
+
 def sync(git_root: Path, version: str, workspace: str):
     """
     Actualiza automáticamente (git pull --ff-only) los repos del workspace
@@ -41,116 +50,7 @@ def sync(git_root: Path, version: str, workspace: str):
     por pushear. El resto se reporta como omitido con el motivo.
     """
 
-    data = load_workspace(
-        git_root,
-        version,
-        workspace,
-    )
-
-    print()
-    print(f"Workspace : {data['project']}")
-    print(f"Version   : {data['version']}")
-    print()
-
-    repositories = data.get("repositories", {})
-    credentials = GitCredentials()
-
-    try:
-        for repo, info in repositories.items():
-
-            expected = str(info["branch"]).strip()
-
-            repo_path = (
-                git_root
-                / version
-                / "odoo"
-                / repo
-            )
-
-            if not repo_path.exists():
-                print_action_result(repo, "skipped", "Repository not found")
-                continue
-
-            current, error = current_branch(repo_path)
-
-            if error:
-                print_action_result(
-                    repo, "skipped",
-                    f"Unable to get current branch: {error}",
-                )
-                continue
-
-            if current != expected:
-                print_action_result(
-                    repo, "skipped",
-                    f"On branch '{current}', expected '{expected}'",
-                )
-                continue
-
-            dirty, error = is_dirty(repo_path)
-
-            if error:
-                print_action_result(
-                    repo, "skipped",
-                    f"Unable to check working tree: {error}",
-                )
-                continue
-
-            if dirty:
-                print_action_result(
-                    repo, "skipped",
-                    "Uncommitted changes in working tree",
-                )
-                continue
-
-            _, error = run_with_fallback(
-                partial(fetch, branch=expected),
-                repo_path,
-                credentials,
-            )
-
-            if error:
-                print_action_result(repo, "skipped", f"Unable to fetch: {error}")
-                continue
-
-            ahead, behind, error = ahead_behind(
-                repo_path,
-                fallback_ref=f"origin/{expected}",
-            )
-
-            if error:
-                print_action_result(
-                    repo, "skipped",
-                    f"No upstream configured or unable to compare: {error}",
-                )
-                continue
-
-            if ahead:
-                print_action_result(
-                    repo, "skipped",
-                    f"{ahead} unpushed commit(s)",
-                )
-                continue
-
-            if behind == 0:
-                print_action_result(repo, "up-to-date")
-                continue
-
-            _, error = run_with_fallback(
-                partial(pull_ff_only, branch=expected),
-                repo_path,
-                credentials,
-            )
-
-            if error:
-                print_action_result(repo, "failed", error)
-                continue
-
-            print_action_result(repo, "updated", f"{behind} commit(s) pulled")
-    finally:
-        credentials.cleanup()
-
-    print()
+    _print_action_payload(collect_sync(git_root, version, workspace))
 
 
 def switch(git_root: Path, version: str, workspace: str):
@@ -160,105 +60,7 @@ def switch(git_root: Path, version: str, workspace: str):
     commits locales sin pushear. No hace pull — eso es ``sync``.
     """
 
-    data = load_workspace(
-        git_root,
-        version,
-        workspace,
-    )
-
-    print()
-    print(f"Workspace : {data['project']}")
-    print(f"Version   : {data['version']}")
-    print()
-
-    repositories = data.get("repositories", {})
-    credentials = GitCredentials()
-
-    try:
-        for repo, info in repositories.items():
-
-            expected = str(info["branch"]).strip()
-
-            repo_path = (
-                git_root
-                / version
-                / "odoo"
-                / repo
-            )
-
-            if not repo_path.exists():
-                print_action_result(repo, "skipped", "Repository not found")
-                continue
-
-            current, error = current_branch(repo_path)
-
-            if error:
-                print_action_result(
-                    repo, "skipped",
-                    f"Unable to get current branch: {error}",
-                )
-                continue
-
-            if current == expected:
-                print_action_result(repo, "already-on-branch")
-                continue
-
-            dirty, error = is_dirty(repo_path)
-
-            if error:
-                print_action_result(
-                    repo, "skipped",
-                    f"Unable to check working tree: {error}",
-                )
-                continue
-
-            if dirty:
-                print_action_result(
-                    repo, "skipped",
-                    "Uncommitted changes in working tree",
-                )
-                continue
-
-            ahead, _behind, ahead_error = ahead_behind(
-                repo_path,
-                fallback_ref=f"origin/{current}",
-            )
-
-            if not ahead_error and ahead:
-                print_action_result(
-                    repo, "skipped",
-                    f"{ahead} unpushed commit(s) on '{current}'",
-                )
-                continue
-
-            if not local_branch_exists(repo_path, expected):
-                _, error = run_with_fallback(
-                    partial(fetch, branch=expected),
-                    repo_path,
-                    credentials,
-                )
-
-                if error:
-                    print_action_result(
-                        repo, "skipped",
-                        f"Unable to fetch '{expected}': {error}",
-                    )
-                    continue
-
-            _, error = checkout(repo_path, expected)
-
-            if error:
-                print_action_result(repo, "failed", error)
-                continue
-
-            print_action_result(
-                repo, "switched",
-                f"'{current}' → '{expected}'",
-            )
-    finally:
-        credentials.cleanup()
-
-    print()
+    _print_action_payload(collect_switch(git_root, version, workspace))
 
 
 def current(git_root: Path, version: str):

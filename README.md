@@ -135,10 +135,16 @@ ows sync 19 BESTWAY
 
 ### `ows ui [port]`
 
-Sirve una UI web **de solo lectura** en `http://127.0.0.1:8765` (o el
-puerto que indiques). Muestra el mismo `status` / `current` que el CLI.
-`switch` y `sync` siguen siendo comandos de terminal — el siguiente
-paso es cablearlos con confirmación.
+UI web local en `http://127.0.0.1:8765` (o el puerto que indiques).
+Incluye los cuatro comandos probados del CLI:
+
+- **Ranking** (`current`) — qué workspace coincide más con tus ramas
+- **Status** — tabla por repo con los mismos íconos ✅ 🟡 ⚠️
+- **Switch** / **Sync** — con confirmación; misma política de skip que
+  en terminal (no toca repos sucios ni con unpushed)
+
+Si usas HTTPS sin SSH/credential helper, rellena username/token en la
+UI antes de Switch/Sync (no se guardan en disco).
 
 ```
 $ ows ui
@@ -148,7 +154,8 @@ $ ows ui 8766
 ```
 
 Requiere `nicegui` (`pip install nicegui`). No hace falta tocar Apache:
-son procesos distintos en puertos distintos.
+son procesos distintos en puertos distintos. Para parar: `Ctrl+C` en la
+terminal donde corre `./ows ui`.
 
 ### `ows sync <version> <workspace>`
 
