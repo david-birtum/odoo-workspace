@@ -20,6 +20,7 @@ def status(git_root: Path, version: str, workspace: str):
             error=row["error"],
             ahead=row["ahead"],
             dirty=row["dirty"],
+            tree_changes=row.get("tree_changes"),
         )
 
 

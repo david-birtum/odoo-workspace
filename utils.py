@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Sequence
 
 def print_repo_status(
     repo: str,
@@ -7,6 +7,7 @@ def print_repo_status(
     error: Optional[str] = None,
     ahead: Optional[int] = None,
     dirty: Optional[bool] = None,
+    tree_changes: Optional[Sequence[str]] = None,
 ) -> None:
     """
     Imprime el estado de un repositorio del workspace.
@@ -35,6 +36,8 @@ def print_repo_status(
 
     if dirty:
         print("    Tree     : Uncommitted changes")
+        for line in tree_changes or []:
+            print(f"             {line}")
 
     if ahead:
         print(f"    Unpushed : {ahead} commit(s)")

@@ -36,6 +36,85 @@ def is_dirty(repo_path):
     return bool(output), None
 
 
+def _porcelain_change_label(index_status: str, worktree_status: str) -> str:
+    """
+    Etiqueta legible para una línea ``git status --porcelain`` (XY).
+    """
+
+    if index_status == "?" and worktree_status == "?":
+        return "untracked"
+
+    if index_status == "R" or worktree_status == "R":
+        return "renamed"
+
+    if index_status == "C" or worktree_status == "C":
+        return "copied"
+
+    if index_status == "D" or worktree_status == "D":
+        return "deleted"
+
+    if index_status == "A" or worktree_status == "A":
+        return "added"
+
+    if index_status == "M" or worktree_status == "M":
+        return "modified"
+
+    if index_status == "U" or worktree_status == "U":
+        return "unmerged"
+
+    return "changed"
+
+
+def parse_porcelain(output: str) -> list[str]:
+    """
+    Convierte la salida de ``git status --porcelain`` en líneas tipo
+    ``modified   path/to/file`` (similar a ``git status -s`` ampliado).
+    """
+
+    entries = []
+
+    for line in output.splitlines():
+        if not line:
+            continue
+
+        if line.startswith("??"):
+            path = line[3:].strip()
+            if path:
+                entries.append(f"untracked  {path}")
+            continue
+
+        xy = line[:2]
+        rest = line[3:].strip()
+        index_status = xy[0] if len(xy) > 0 else " "
+        worktree_status = xy[1] if len(xy) > 1 else " "
+        label = _porcelain_change_label(index_status, worktree_status)
+
+        if " -> " in rest:
+            entries.append(f"{label:<10} {rest}")
+        elif rest:
+            entries.append(f"{label:<10} {rest}")
+
+    return entries
+
+
+def working_tree_changes(repo_path):
+    """
+    :return: ``(dirty, lines, error)`` donde ``lines`` lista cambios
+        locales (vacío si el árbol está limpio).
+    :rtype: tuple
+    """
+
+    output, error = git(repo_path, "status", "--porcelain")
+
+    if error is not None:
+        return None, [], error
+
+    if not output:
+        return False, [], None
+
+    return True, parse_porcelain(output), None
+
+
 def ahead_behind(repo_path, fallback_ref=None):
     """
     Cuenta commits locales sin pushear (ahead) y commits remotos sin

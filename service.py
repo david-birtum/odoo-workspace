@@ -4,12 +4,12 @@ from pathlib import Path
 from workspace import load_workspace, list_workspaces, repo_path
 from gitutils import (
     current_branch,
-    is_dirty,
     ahead_behind,
     fetch,
     pull_ff_only,
     local_branch_exists,
     checkout,
+    working_tree_changes,
 )
 from credentials import GitCredentials, CredentialRequired, run_with_fallback
 
@@ -43,6 +43,7 @@ def collect_repo_status(git_root: Path, version: str, repo: str, expected: str) 
         "expected": expected,
         "ahead": None,
         "dirty": None,
+        "tree_changes": [],
         "error": None,
     }
 
@@ -66,8 +67,12 @@ def collect_repo_status(git_root: Path, version: str, repo: str, expected: str) 
     )
     row["ahead"] = None if ahead_error else ahead
 
-    dirty, _dirty_error = is_dirty(path)
+    dirty, tree_changes, dirty_error = working_tree_changes(path)
     row["dirty"] = dirty
+    row["tree_changes"] = tree_changes
+
+    if dirty_error and row["error"] is None:
+        row["error"] = f"Unable to read working tree: {dirty_error}"
 
     return row
 

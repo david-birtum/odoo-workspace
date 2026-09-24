@@ -37,7 +37,18 @@ STATUS_COLUMNS = [
     {"name": "current", "label": "Current", "field": "current", "align": "left"},
     {"name": "expected", "label": "Expected", "field": "expected", "align": "left"},
     {"name": "notes", "label": "Notes", "field": "notes", "align": "left"},
+    {"name": "changes", "label": "Working tree", "field": "changes", "align": "left"},
 ]
+
+_CHANGES_CELL_SLOT = """
+<q-td :props="props">
+  <div
+    v-if="props.value"
+    class="text-body2 text-grey-9"
+    style="white-space: pre-wrap; max-width: 28rem; font-family: monospace; font-size: 0.85rem;"
+  >{{ props.value }}</div>
+</q-td>
+"""
 
 RANKING_COLUMNS = [
     {"name": "rank", "label": "", "field": "rank", "align": "left"},
@@ -118,6 +129,14 @@ def _notes(row: dict) -> str:
     return " · ".join(notes)
 
 
+def _working_tree_cell(row: dict) -> str:
+    if not row.get("dirty"):
+        return ""
+
+    changes = row.get("tree_changes") or []
+    return "\n".join(changes)
+
+
 def _status_table_row(row: dict) -> dict:
     return {
         "state": STATUS_ICON[status_kind(row)],
@@ -125,6 +144,7 @@ def _status_table_row(row: dict) -> dict:
         "current": row.get("current") or "—",
         "expected": row.get("expected") or "—",
         "notes": _notes(row),
+        "changes": _working_tree_cell(row),
     }
 
 
@@ -218,6 +238,7 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
             row_key="repo",
         ).classes("w-full")
         _attach_copy_slots(status_table, "repo", "current")
+        status_table.add_slot("body-cell-changes", _CHANGES_CELL_SLOT)
 
         ui.label("Last action").classes("text-subtitle1 mt-4")
         action_table = ui.table(

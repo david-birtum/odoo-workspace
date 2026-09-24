@@ -7,6 +7,14 @@ interna, no un paquete publicado); las entradas se agrupan por fecha.
 
 ## [Unreleased]
 
+## [2026-09-24] — working tree: listado de archivos en status
+
+### Added
+- Columna **Working tree** en la UI (y líneas bajo ``Tree`` en el CLI)
+  cuando hay cambios sin commitear: parseo de ``git status --porcelain``
+  con etiquetas ``modified`` / ``added`` / ``deleted`` / ``untracked`` /
+  ``renamed``, etc.
+
 ## [2026-09-14] — ui: switch, sync y ranking en el navegador
 
 ### Added
