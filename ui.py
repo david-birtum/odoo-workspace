@@ -52,6 +52,56 @@ ACTION_COLUMNS = [
     {"name": "reason", "label": "Reason", "field": "reason", "align": "left"},
 ]
 
+# Copia en el cliente (mismo gesto de click) y aviso vía emit → Python.
+_COPY_JS = """
+() => {
+    const text = String(props.value ?? '');
+    if (!text || text === '—') return;
+    const fallback = () => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).catch(fallback);
+    } else {
+        fallback();
+    }
+    emit(text);
+}
+"""
+
+
+def _notify_copied(_event) -> None:
+    ui.notify("Copied", type="positive", timeout=800)
+
+
+def _attach_copy_slots(table, *columns: str) -> None:
+    for column in columns:
+        with table.add_slot(f"body-cell-{column}"):
+            with table.cell(column):
+                with ui.row().classes("items-center no-wrap q-gutter-xs"):
+                    # :label=props.value (como en la doc de NiceGUI); v-text en span no renderiza aquí.
+                    ui.button().props(
+                        ":label=props.value flat dense no-caps ripple=false "
+                        "color=transparent text-color=inherit"
+                    ).style(
+                        "pointer-events: none; min-height: 0; padding: 0; opacity: 1"
+                    )
+                    ui.button(icon="content_copy").props(
+                        "flat dense round size=sm"
+                    ).props('v-if="props.value && props.value !== \'—\'"').on(
+                        "click",
+                        js_handler=_COPY_JS,
+                        handler=_notify_copied,
+                    ).tooltip("Copy")
+
 
 def _notes(row: dict) -> str:
     notes = []
@@ -167,6 +217,7 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
             rows=[],
             row_key="repo",
         ).classes("w-full")
+        _attach_copy_slots(status_table, "repo", "current")
 
         ui.label("Last action").classes("text-subtitle1 mt-4")
         action_table = ui.table(
@@ -174,6 +225,7 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
             rows=[],
             row_key="repo",
         ).classes("w-full")
+        _attach_copy_slots(action_table, "repo")
 
         confirm_dialog = ui.dialog()
         pending_action = {"name": None}
