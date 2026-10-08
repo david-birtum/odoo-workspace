@@ -1,6 +1,8 @@
+import asyncio
+import queue
 from pathlib import Path
 
-from nicegui import ui
+from nicegui import run, ui
 
 from service import (
     collect_status,
@@ -9,7 +11,7 @@ from service import (
     collect_switch,
     status_kind,
 )
-from workspace import list_versions, list_workspace_names
+from workspace import list_versions, list_workspace_names, load_workspace
 
 
 DEFAULT_HOST = "127.0.0.1"
@@ -29,6 +31,8 @@ ACTION_ICON = {
     "already-on-branch": "✅",
     "skipped": "⏭️",
     "failed": "❌",
+    "pending": "⏳",
+    "running": "🔄",
 }
 
 STATUS_COLUMNS = [
@@ -157,6 +161,35 @@ def _action_table_row(row: dict) -> dict:
     }
 
 
+def _action_progress_rows(
+    repo_names: list[str],
+    finished: dict[str, dict],
+    current_repo: str | None,
+    current_step: str | None,
+) -> list[dict]:
+    rows = []
+
+    for repo in repo_names:
+        if repo in finished:
+            rows.append(_action_table_row(finished[repo]))
+        elif repo == current_repo:
+            rows.append({
+                "state": ACTION_ICON["running"],
+                "repo": repo,
+                "status": "running",
+                "reason": current_step or "…",
+            })
+        else:
+            rows.append({
+                "state": ACTION_ICON["pending"],
+                "repo": repo,
+                "status": "pending",
+                "reason": "",
+            })
+
+    return rows
+
+
 def _default_version(versions):
     if "19" in versions:
         return "19"
@@ -251,13 +284,6 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
         confirm_dialog = ui.dialog()
         pending_action = {"name": None}
 
-        with confirm_dialog, ui.card().classes("w-96"):
-            confirm_title = ui.label().classes("text-h6")
-            confirm_body = ui.label().classes("text-body2")
-            with ui.row().classes("w-full justify-end q-gutter-sm mt-4"):
-                ui.button("Cancel", on_click=confirm_dialog.close).props("flat")
-                ui.button("Run", on_click=lambda: run_confirmed()).props("color=primary")
-
         def credentials_provider():
             username = (git_username.value or "").strip()
             token = git_token.value or ""
@@ -332,7 +358,7 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
                 )
                 ui.notify(f"{payload['action'].capitalize()} done", type="positive")
 
-        def run_confirmed():
+        async def run_confirmed():
             confirm_dialog.close()
             action = pending_action["name"]
             version = version_sel.value
@@ -342,19 +368,100 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
                 ui.notify("Pick version and workspace first", type="warning")
                 return
 
-            if action == "switch":
-                payload = collect_switch(
-                    git_root, version, workspace,
-                    credentials_provider=credentials_provider,
+            manifest = load_workspace(git_root, version, workspace)
+            repo_names = list(manifest.get("repositories", {}).keys())
+            total = len(repo_names)
+
+            progress_queue: queue.SimpleQueue = queue.SimpleQueue()
+            progress_state = {
+                "finished": {},
+                "current_repo": None,
+                "current_step": None,
+            }
+
+            def apply_progress_event(event: dict) -> None:
+                event_type = event["type"]
+
+                if event_type == "repo_start":
+                    progress_state["current_repo"] = event["repo"]
+                    progress_state["current_step"] = event.get("step", "")
+                elif event_type == "repo_step":
+                    progress_state["current_step"] = event["step"]
+                elif event_type == "repo_done":
+                    progress_state["finished"][event["repo"]] = event["result"]
+                    progress_state["current_repo"] = None
+                    progress_state["current_step"] = None
+
+            def refresh_action_progress() -> None:
+                done = len(progress_state["finished"])
+                action_table.rows = _action_progress_rows(
+                    repo_names,
+                    progress_state["finished"],
+                    progress_state["current_repo"],
+                    progress_state["current_step"],
                 )
-            else:
-                payload = collect_sync(
-                    git_root, version, workspace,
-                    credentials_provider=credentials_provider,
+                action_table.update()
+
+                current = progress_state["current_repo"]
+                step = progress_state["current_step"]
+
+                if current:
+                    action_hint.set_text(
+                        f"{action.capitalize()} {done}/{total} done — "
+                        f"{current}: {step or '…'}"
+                    )
+                else:
+                    action_hint.set_text(
+                        f"{action.capitalize()}… {done}/{total} done"
+                    )
+
+            def progress_callback(event: dict) -> None:
+                progress_queue.put(event)
+
+            refresh_action_progress()
+            await asyncio.sleep(0)
+
+            collector = collect_switch if action == "switch" else collect_sync
+
+            worker = asyncio.create_task(
+                run.io_bound(
+                    collector,
+                    git_root,
+                    version,
+                    workspace,
+                    credentials_provider,
+                    progress_callback,
                 )
+            )
+
+            while not worker.done():
+                updated = False
+                while not progress_queue.empty():
+                    apply_progress_event(progress_queue.get())
+                    updated = True
+                if updated:
+                    refresh_action_progress()
+                await asyncio.sleep(0.05)
+
+            while not progress_queue.empty():
+                apply_progress_event(progress_queue.get())
+
+            payload = await worker
+            refresh_action_progress()
+
+            if payload is None:
+                ui.notify(f"{action.capitalize()} cancelled", type="warning")
+                return
 
             show_action_results(payload)
             refresh_all()
+
+        with confirm_dialog, ui.card().classes("w-96"):
+            confirm_title = ui.label().classes("text-h6")
+            confirm_body = ui.label().classes("text-body2")
+            with ui.row().classes("w-full justify-end q-gutter-sm mt-4"):
+                ui.button("Cancel", on_click=confirm_dialog.close).props("flat")
+                ui.button("Run", on_click=run_confirmed).props("color=primary")
 
         def confirm_action(action: str):
             version = version_sel.value

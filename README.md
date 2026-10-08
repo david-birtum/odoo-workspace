@@ -87,7 +87,13 @@ $ ows status 19 BESTWAY
 🟡 addons-pos
     Branch   : 19.0-BESTWAY
     Tree     : Uncommitted changes
+             modified   addons/sale/models/order.py
+             untracked  tmp.txt
 ```
+
+Si hay cambios sin commitear, debajo de `Tree` se listan archivos con
+etiquetas al estilo `git status --porcelain` (`modified`, `added`,
+`deleted`, `untracked`, `renamed`, …).
 
 ### `ows current <version>`
 
@@ -139,9 +145,14 @@ UI web local en `http://127.0.0.1:8765` (o el puerto que indiques).
 Incluye los cuatro comandos probados del CLI:
 
 - **Ranking** (`current`) — qué workspace coincide más con tus ramas
-- **Status** — tabla por repo con los mismos íconos ✅ 🟡 ⚠️
+- **Status** — tabla por repo con los mismos íconos ✅ 🟡 ⚠️; columna
+  **Working tree** con el detalle de archivos cuando hay cambios locales;
+  botones de copiar en **Repo** y **Current**
 - **Switch** / **Sync** — con confirmación; misma política de skip que
-  en terminal (no toca repos sucios ni con unpushed)
+  en terminal (no toca repos sucios ni con unpushed). Mientras corre, la
+  tabla **Last action** muestra progreso en vivo: repos pendientes (⏳),
+  el repo en curso (🔄) con el paso actual (`Fetching origin/…`, `Pulling…`,
+  `Checking out…`, etc.) y los ya terminados con su resultado
 
 Si usas HTTPS sin SSH/credential helper, rellena username/token en la
 UI antes de Switch/Sync (no se guardan en disco).
@@ -191,7 +202,7 @@ necesita.
 
 ```
 ows              # entrypoint: parseo de argv, usage()
-service.py       # collect_status / collect_current — datos, sin print
+service.py       # collect_* (status, current, sync, switch) — datos, sin print
 commands.py      # status(), current(), switch(), sync() — CLI sobre service
 ui.py            # NiceGUI: ows ui en 127.0.0.1:8765
 workspace.py     # lectura de manifests YAML

@@ -4,6 +4,7 @@ from pathlib import Path
 from workspace import load_workspace, list_workspaces, repo_path
 from gitutils import (
     current_branch,
+    is_dirty,
     ahead_behind,
     fetch,
     pull_ff_only,
@@ -176,11 +177,43 @@ def _action_result(repo: str, status: str, reason: str | None = None) -> dict:
     }
 
 
+def _emit_progress(progress_callback, event: dict) -> None:
+    if progress_callback is not None:
+        progress_callback(event)
+
+
+def _progress_repo_start(progress_callback, repo: str, index: int, total: int) -> None:
+    _emit_progress(progress_callback, {
+        "type": "repo_start",
+        "repo": repo,
+        "index": index,
+        "total": total,
+        "step": "Starting",
+    })
+
+
+def _progress_repo_step(progress_callback, repo: str, step: str) -> None:
+    _emit_progress(progress_callback, {
+        "type": "repo_step",
+        "repo": repo,
+        "step": step,
+    })
+
+
+def _progress_repo_done(progress_callback, result: dict) -> None:
+    _emit_progress(progress_callback, {
+        "type": "repo_done",
+        "repo": result["repo"],
+        "result": result,
+    })
+
+
 def collect_sync(
     git_root: Path,
     version: str,
     workspace: str,
     credentials_provider=None,
+    progress_callback=None,
 ) -> dict:
     """
     Misma lógica que ``ows sync``. Devuelve resultados por repo.
@@ -192,57 +225,67 @@ def collect_sync(
     needs_credentials = False
 
     credentials = GitCredentials(provider=credentials_provider)
+    total = len(repositories)
 
     try:
-        for repo, info in repositories.items():
+        for index, (repo, info) in enumerate(repositories.items(), start=1):
 
+            _progress_repo_start(progress_callback, repo, index, total)
             expected = str(info["branch"]).strip()
             path = repo_path(git_root, version, repo)
 
             if not path.exists():
-                results.append(_action_result(repo, "skipped", "Repository not found"))
+                result = _action_result(repo, "skipped", "Repository not found")
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
+            _progress_repo_step(progress_callback, repo, "Reading current branch")
             current, error = current_branch(path)
 
             if error:
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        f"Unable to get current branch: {error}",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    f"Unable to get current branch: {error}",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
             if current != expected:
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        f"On branch '{current}', expected '{expected}'",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    f"On branch '{current}', expected '{expected}'",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
+            _progress_repo_step(progress_callback, repo, "Checking working tree")
             dirty, error = is_dirty(path)
 
             if error:
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        f"Unable to check working tree: {error}",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    f"Unable to check working tree: {error}",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
             if dirty:
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        "Uncommitted changes in working tree",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    "Uncommitted changes in working tree",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
+            _progress_repo_step(
+                progress_callback, repo,
+                f"Fetching origin/{expected}",
+            )
             try:
                 _, error = run_with_fallback(
                     partial(fetch, branch=expected),
@@ -251,45 +294,54 @@ def collect_sync(
                 )
             except CredentialRequired:
                 needs_credentials = True
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        "Git credentials required (HTTPS)",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    "Git credentials required (HTTPS)",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
             if error:
-                results.append(_action_result(repo, "skipped", f"Unable to fetch: {error}"))
+                result = _action_result(repo, "skipped", f"Unable to fetch: {error}")
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
+            _progress_repo_step(progress_callback, repo, "Comparing with remote")
             ahead, behind, error = ahead_behind(
                 path,
                 fallback_ref=f"origin/{expected}",
             )
 
             if error:
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        f"No upstream configured or unable to compare: {error}",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    f"No upstream configured or unable to compare: {error}",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
             if ahead:
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        f"{ahead} unpushed commit(s)",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    f"{ahead} unpushed commit(s)",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
             if behind == 0:
-                results.append(_action_result(repo, "up-to-date"))
+                result = _action_result(repo, "up-to-date")
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
+            _progress_repo_step(
+                progress_callback, repo,
+                f"Pulling {behind} commit(s) (fast-forward)",
+            )
             try:
                 _, error = run_with_fallback(
                     partial(pull_ff_only, branch=expected),
@@ -298,21 +350,23 @@ def collect_sync(
                 )
             except CredentialRequired:
                 needs_credentials = True
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        "Git credentials required (HTTPS)",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    "Git credentials required (HTTPS)",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
             if error:
-                results.append(_action_result(repo, "failed", error))
+                result = _action_result(repo, "failed", error)
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
-            results.append(
-                _action_result(repo, "updated", f"{behind} commit(s) pulled")
-            )
+            result = _action_result(repo, "updated", f"{behind} commit(s) pulled")
+            results.append(result)
+            _progress_repo_done(progress_callback, result)
     finally:
         credentials.cleanup()
 
@@ -330,6 +384,7 @@ def collect_switch(
     version: str,
     workspace: str,
     credentials_provider=None,
+    progress_callback=None,
 ) -> dict:
     """
     Misma lógica que ``ows switch``. Devuelve resultados por repo.
@@ -341,67 +396,80 @@ def collect_switch(
     needs_credentials = False
 
     credentials = GitCredentials(provider=credentials_provider)
+    total = len(repositories)
 
     try:
-        for repo, info in repositories.items():
+        for index, (repo, info) in enumerate(repositories.items(), start=1):
 
+            _progress_repo_start(progress_callback, repo, index, total)
             expected = str(info["branch"]).strip()
             path = repo_path(git_root, version, repo)
 
             if not path.exists():
-                results.append(_action_result(repo, "skipped", "Repository not found"))
+                result = _action_result(repo, "skipped", "Repository not found")
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
+            _progress_repo_step(progress_callback, repo, "Reading current branch")
             current, error = current_branch(path)
 
             if error:
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        f"Unable to get current branch: {error}",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    f"Unable to get current branch: {error}",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
             if current == expected:
-                results.append(_action_result(repo, "already-on-branch"))
+                result = _action_result(repo, "already-on-branch")
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
+            _progress_repo_step(progress_callback, repo, "Checking working tree")
             dirty, error = is_dirty(path)
 
             if error:
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        f"Unable to check working tree: {error}",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    f"Unable to check working tree: {error}",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
             if dirty:
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        "Uncommitted changes in working tree",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    "Uncommitted changes in working tree",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
+            _progress_repo_step(progress_callback, repo, "Checking unpushed commits")
             ahead, _behind, ahead_error = ahead_behind(
                 path,
                 fallback_ref=f"origin/{current}",
             )
 
             if not ahead_error and ahead:
-                results.append(
-                    _action_result(
-                        repo, "skipped",
-                        f"{ahead} unpushed commit(s) on '{current}'",
-                    )
+                result = _action_result(
+                    repo, "skipped",
+                    f"{ahead} unpushed commit(s) on '{current}'",
                 )
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
             if not local_branch_exists(path, expected):
+                _progress_repo_step(
+                    progress_callback, repo,
+                    f"Fetching origin/{expected}",
+                )
                 try:
                     _, error = run_with_fallback(
                         partial(fetch, branch=expected),
@@ -410,35 +478,41 @@ def collect_switch(
                     )
                 except CredentialRequired:
                     needs_credentials = True
-                    results.append(
-                        _action_result(
-                            repo, "skipped",
-                            "Git credentials required (HTTPS)",
-                        )
+                    result = _action_result(
+                        repo, "skipped",
+                        "Git credentials required (HTTPS)",
                     )
+                    results.append(result)
+                    _progress_repo_done(progress_callback, result)
                     continue
 
                 if error:
-                    results.append(
-                        _action_result(
-                            repo, "skipped",
-                            f"Unable to fetch '{expected}': {error}",
-                        )
+                    result = _action_result(
+                        repo, "skipped",
+                        f"Unable to fetch '{expected}': {error}",
                     )
+                    results.append(result)
+                    _progress_repo_done(progress_callback, result)
                     continue
 
+            _progress_repo_step(
+                progress_callback, repo,
+                f"Checking out {expected}",
+            )
             _, error = checkout(path, expected)
 
             if error:
-                results.append(_action_result(repo, "failed", error))
+                result = _action_result(repo, "failed", error)
+                results.append(result)
+                _progress_repo_done(progress_callback, result)
                 continue
 
-            results.append(
-                _action_result(
-                    repo, "switched",
-                    f"'{current}' → '{expected}'",
-                )
+            result = _action_result(
+                repo, "switched",
+                f"'{current}' → '{expected}'",
             )
+            results.append(result)
+            _progress_repo_done(progress_callback, result)
     finally:
         credentials.cleanup()
 

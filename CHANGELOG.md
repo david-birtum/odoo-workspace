@@ -7,6 +7,17 @@ interna, no un paquete publicado); las entradas se agrupan por fecha.
 
 ## [Unreleased]
 
+## [2026-10-08] — ui: progreso en vivo en switch/sync
+
+### Added
+- Switch/Sync en la UI muestran progreso en vivo: repos pendientes (⏳),
+  repo en curso (🔄) con el paso actual (fetch, pull, checkout, etc.) y
+  repos ya terminados con su resultado final; texto de avance ``N/M done``.
+
+### Fixed
+- ``collect_switch`` / ``collect_sync`` volvieron a importar ``is_dirty``
+  (regresión tras el refactor de ``working_tree_changes``).
+
 ## [2026-09-24] — working tree: listado de archivos en status
 
 ### Added
