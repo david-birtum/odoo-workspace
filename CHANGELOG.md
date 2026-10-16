@@ -7,6 +7,30 @@ interna, no un paquete publicado); las entradas se agrupan por fecha.
 
 ## [Unreleased]
 
+## [2026-10-16] — switch: memoria de ramas de trabajo por workspace
+
+### Added
+- ``ows switch`` recuerda, por workspace, las ramas de trabajo en curso
+  (feature/fix fuera del manifest) del workspace que dejas y las retoma al
+  volver, en cualquier repo. Estado local en ``~/.local/state/ows/state.json``
+  (``$XDG_STATE_HOME`` / ``OWS_STATE_FILE``), escrito de forma atómica.
+- ``ows switch <v> <ws> --manifest``: comportamiento anterior (todas las
+  ramas del YAML) y olvida lo recordado para ese workspace.
+- Ícono propio 🔧 para "trabajo en curso" en ``status``, en el resultado de
+  ``switch`` (``resumed``) y en la UI; aviso local (sin red) "already merged
+  into <rama>" vía ``git merge-base --is-ancestor`` contra ``origin/<rama>``.
+- Botón **Switch to manifest** en la UI; el aviso tras Switch lista las ramas
+  guardadas del workspace que se dejó.
+
+### Changed
+- ``sync`` explica el skip de repos en trabajo en curso: "Work in progress
+  on 'X' (sync only updates 'Y')".
+- Si una rama recordada ya no existe en local, ``switch`` usa la del manifest,
+  la olvida y lo indica en el resultado.
+- Switch/Sync ya no dicen solo "done" si hubo repos saltados: la UI muestra
+  un aviso de advertencia con el conteo (``N skipped/failed (see Last
+  action)``) y el CLI imprime una línea de resumen al final.
+
 ## [2026-10-08] — ui: progreso en vivo en switch/sync
 
 ### Added

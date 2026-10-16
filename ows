@@ -22,24 +22,27 @@ OWS - Odoo Workspace Manager
 Usage:
     ows status  <version> <workspace>
     ows current <version>
-    ows switch  <version> <workspace>
+    ows switch  <version> <workspace> [--manifest]
     ows sync    <version> <workspace>
     ows ui      [port]
 
 Commands:
     status      Compare current branches with a workspace manifest.
     current     Show a ranking of workspaces based on current branches.
-    switch      Checkout the expected branch on each repo (never
-                touches a dirty or unpushed repo; does not pull).
+    switch      Checkout each repo to its remembered work branch, or to
+                the manifest branch if none (never touches a dirty or
+                unpushed repo; does not pull). --manifest always uses
+                the manifest branch and forgets remembered work branches.
     sync        Auto-update (git pull --ff-only) repos that are on the
                 expected branch, clean, and with nothing to push.
-    ui          Local web UI (read-only status) on 127.0.0.1:8765.
+    ui          Local web UI on 127.0.0.1:8765.
 
 Examples:
     ows status 19 BESTWAY
     ows status 19 PRISSA
     ows current 19
     ows switch 19 BESTWAY
+    ows switch 19 BESTWAY --manifest
     ows sync 19 BESTWAY
     ows ui
     ows ui 8766
@@ -85,13 +88,18 @@ def cmd_sync():
 
 def cmd_switch():
 
-    if len(sys.argv) != 4:
+    args = sys.argv[2:]
+    manifest = "--manifest" in args
+    positional = [arg for arg in args if arg != "--manifest"]
+
+    if len(positional) != 2 or any(arg.startswith("-") for arg in positional):
         usage()
 
     switch(
         GIT_ROOT,
-        sys.argv[2],
-        sys.argv[3],
+        positional[0],
+        positional[1],
+        manifest=manifest,
     )
 
 

@@ -8,6 +8,8 @@ def print_repo_status(
     ahead: Optional[int] = None,
     dirty: Optional[bool] = None,
     tree_changes: Optional[Sequence[str]] = None,
+    wip: bool = False,
+    merged_into: Optional[str] = None,
 ) -> None:
     """
     Imprime el estado de un repositorio del workspace.
@@ -23,7 +25,14 @@ def print_repo_status(
         print()
         return
 
-    if current != expected:
+    if current != expected and wip:
+        print(f"🔧 {repo}")
+        print(f"    Branch   : {current} (work in progress)")
+        print(f"    Expected : {expected}")
+
+        if merged_into:
+            print(f"    Merged   : already in {merged_into}")
+    elif current != expected:
         print(f"⚠️  {repo}")
         print(f"    Current  : {current}")
         print(f"    Expected : {expected}")
@@ -58,6 +67,7 @@ def print_action_result(
         "updated": "✅",
         "up-to-date": "✅",
         "switched": "✅",
+        "resumed": "🔧",
         "already-on-branch": "✅",
         "skipped": "⏭️ ",
         "failed": "❌",

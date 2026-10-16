@@ -1,5 +1,6 @@
 import asyncio
 import queue
+from functools import partial
 from pathlib import Path
 
 from nicegui import run, ui
@@ -19,6 +20,7 @@ DEFAULT_PORT = 8765
 
 STATUS_ICON = {
     "ok": "✅",
+    "wip": "🔧",
     "blocked": "🟡",
     "mismatch": "⚠️",
     "error": "❌",
@@ -28,6 +30,7 @@ ACTION_ICON = {
     "updated": "✅",
     "up-to-date": "✅",
     "switched": "✅",
+    "resumed": "🔧",
     "already-on-branch": "✅",
     "skipped": "⏭️",
     "failed": "❌",
@@ -53,6 +56,12 @@ _CHANGES_CELL_SLOT = """
   >{{ props.value }}</div>
 </q-td>
 """
+
+ACTION_LABEL = {
+    "switch": "Switch",
+    "switch-manifest": "Switch to manifest",
+    "sync": "Sync",
+}
 
 RANKING_COLUMNS = [
     {"name": "rank", "label": "", "field": "rank", "align": "left"},
@@ -123,6 +132,12 @@ def _notes(row: dict) -> str:
 
     if row.get("error"):
         notes.append(row["error"])
+
+    if row.get("wip"):
+        notes.append("Work in progress")
+
+    if row.get("merged_into"):
+        notes.append(f"already merged into {row['merged_into']}")
 
     if row.get("dirty"):
         notes.append("Uncommitted changes")
@@ -252,6 +267,10 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
 
         with ui.row().classes("q-gutter-md mt-2"):
             ui.button("Switch", on_click=lambda: confirm_action("switch")).props("color=primary")
+            ui.button(
+                "Switch to manifest",
+                on_click=lambda: confirm_action("switch-manifest"),
+            ).props("color=primary outline")
             ui.button("Sync", on_click=lambda: confirm_action("sync")).props("color=secondary")
 
         hint = ui.label().classes("mt-2")
@@ -353,14 +372,38 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
                     type="warning",
                 )
             else:
-                action_hint.set_text(
-                    f"{payload['action'].capitalize()} finished for {payload['project']}."
+                action_name = payload["action"].capitalize()
+                skipped = sum(
+                    1 for row in payload["results"]
+                    if row["status"] in ("skipped", "failed")
                 )
-                ui.notify(f"{payload['action'].capitalize()} done", type="positive")
+                text = f"{action_name} finished for {payload['project']}"
+
+                if skipped:
+                    text += f" — {skipped} skipped/failed (see Last action)."
+                else:
+                    text += "."
+
+                saved = payload.get("saved_branches") or {}
+
+                if saved:
+                    branches = ", ".join(f"{repo}: {branch}" for repo, branch in saved.items())
+                    text += f" Saved work branches of {payload['left_workspace']} — {branches}."
+
+                action_hint.set_text(text)
+
+                if skipped:
+                    ui.notify(
+                        f"{action_name}: {skipped} repo(s) skipped/failed — see Last action",
+                        type="warning",
+                    )
+                else:
+                    ui.notify(f"{action_name} done", type="positive")
 
         async def run_confirmed():
             confirm_dialog.close()
-            action = pending_action["name"]
+            action_name = pending_action["name"]
+            action = ACTION_LABEL[action_name]
             version = version_sel.value
             workspace = workspace_sel.value
 
@@ -407,12 +450,12 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
 
                 if current:
                     action_hint.set_text(
-                        f"{action.capitalize()} {done}/{total} done — "
+                        f"{action} {done}/{total} done — "
                         f"{current}: {step or '…'}"
                     )
                 else:
                     action_hint.set_text(
-                        f"{action.capitalize()}… {done}/{total} done"
+                        f"{action}… {done}/{total} done"
                     )
 
             def progress_callback(event: dict) -> None:
@@ -421,7 +464,12 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
             refresh_action_progress()
             await asyncio.sleep(0)
 
-            collector = collect_switch if action == "switch" else collect_sync
+            if action_name == "switch":
+                collector = collect_switch
+            elif action_name == "switch-manifest":
+                collector = partial(collect_switch, manifest=True)
+            else:
+                collector = collect_sync
 
             worker = asyncio.create_task(
                 run.io_bound(
@@ -450,7 +498,7 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
             refresh_action_progress()
 
             if payload is None:
-                ui.notify(f"{action.capitalize()} cancelled", type="warning")
+                ui.notify(f"{action} cancelled", type="warning")
                 return
 
             show_action_results(payload)
@@ -472,10 +520,14 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
                 return
 
             pending_action["name"] = action
-            verb = "checkout branches for" if action == "switch" else "pull updates for"
-            confirm_title.set_text(f"Run {action}?")
+            verbs = {
+                "switch": "checkout the remembered work branches (or the manifest branches) for",
+                "switch-manifest": "checkout the manifest branches, forgetting remembered work branches, for",
+                "sync": "pull updates for",
+            }
+            confirm_title.set_text(f"Run {ACTION_LABEL[action].lower()}?")
             confirm_body.set_text(
-                f"This will {verb} workspace {workspace} (Odoo {version}). "
+                f"This will {verbs[action]} workspace {workspace} (Odoo {version}). "
                 "Dirty or unpushed repos are skipped, same as the CLI."
             )
             confirm_dialog.open()

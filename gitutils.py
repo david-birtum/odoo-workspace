@@ -196,6 +196,31 @@ def local_branch_exists(repo_path, branch):
     return error is None
 
 
+def is_merged_into(repo_path, branch, target_ref):
+    """
+    Comprueba en local (sin red) si ``branch`` ya está contenida en
+    ``target_ref`` (ej. ``origin/19.0``), usando el último fetch conocido.
+
+    :return: ``True`` / ``False``, o ``None`` si ``target_ref`` no existe
+        en local o git falla.
+    """
+
+    _, error = git(repo_path, "rev-parse", "--verify", "--quiet", target_ref)
+
+    if error is not None:
+        return None
+
+    _, error = git(repo_path, "merge-base", "--is-ancestor", branch, target_ref)
+
+    if error is None:
+        return True
+
+    if error == "":
+        return False
+
+    return None
+
+
 def checkout(repo_path, branch, env=None):
     """
     ``git checkout <branch>``. Si la rama no existe en local pero sí

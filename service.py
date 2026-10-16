@@ -11,25 +11,112 @@ from gitutils import (
     local_branch_exists,
     checkout,
     working_tree_changes,
+    is_merged_into,
 )
 from credentials import GitCredentials, CredentialRequired, run_with_fallback
+from state import (
+    get_active_workspace,
+    set_active_workspace,
+    get_remembered,
+    remember_branches,
+    forget_workspace,
+    forget_repo,
+)
 
 
 def status_kind(row: dict) -> str:
     """
-    Misma clasificación que ``ows status``: error, mismatch, blocked, ok.
+    Misma clasificación que ``ows status``: error, wip, mismatch, blocked, ok.
     """
 
     if row.get("error"):
         return "error"
 
     if row.get("current") != row.get("expected"):
-        return "mismatch"
+        return "wip" if row.get("wip") else "mismatch"
 
     if row.get("dirty") or row.get("ahead"):
         return "blocked"
 
     return "ok"
+
+
+def manifest_branches(git_root: Path, version: str) -> dict:
+    """
+    ``{repo: {ramas}}`` declaradas en cualquier manifest de la versión.
+    """
+
+    branches = {}
+
+    for manifest in list_workspaces(git_root, version):
+        data = load_workspace(git_root, version, manifest.stem)
+
+        for repo, info in (data.get("repositories") or {}).items():
+            branches.setdefault(repo, set()).add(str(info["branch"]).strip())
+
+    return branches
+
+
+def is_work_branch(
+    repo: str,
+    branch: str | None,
+    expected: str,
+    known_branches: dict,
+    remembered: dict,
+) -> bool:
+    """
+    Rama de trabajo en curso: distinta a la esperada y, o bien recordada
+    para el workspace, o bien no declarada en ningún manifest de la versión.
+    """
+
+    if not branch or branch == expected:
+        return False
+
+    if remembered.get(repo) == branch:
+        return True
+
+    return branch not in known_branches.get(repo, set())
+
+
+def _merged_into_expected(path: Path, branch: str, expected: str) -> bool:
+    return bool(is_merged_into(path, branch, f"origin/{expected}"))
+
+
+def snapshot_work_branches(
+    git_root: Path,
+    version: str,
+    workspace: str,
+    known_branches: dict | None = None,
+) -> dict:
+    """
+    Guarda en el estado local las ramas de trabajo en las que están ahora
+    los repos de ``workspace``. Reemplaza lo recordado antes.
+    """
+
+    data = load_workspace(git_root, version, workspace)
+    known = known_branches if known_branches is not None else manifest_branches(git_root, version)
+    remembered = get_remembered(version, workspace)
+    branches = {}
+
+    for repo, info in (data.get("repositories") or {}).items():
+
+        expected = str(info["branch"]).strip()
+        path = repo_path(git_root, version, repo)
+
+        if not path.exists():
+            continue
+
+        current, error = current_branch(path)
+
+        if error or not current:
+            continue
+
+        if is_work_branch(repo, current, expected, known, remembered):
+            branches[repo] = current
+
+    remember_branches(version, workspace, branches)
+
+    return branches
 
 
 def collect_repo_status(git_root: Path, version: str, repo: str, expected: str) -> dict:
@@ -45,6 +132,8 @@ def collect_repo_status(git_root: Path, version: str, repo: str, expected: str) 
         "ahead": None,
         "dirty": None,
         "tree_changes": [],
+        "wip": False,
+        "merged_into": None,
         "error": None,
     }
 
@@ -82,12 +171,25 @@ def collect_status(git_root: Path, version: str, workspace: str) -> dict:
 
     data = load_workspace(git_root, version, workspace)
     repositories = data.get("repositories", {})
+    known = manifest_branches(git_root, version)
+    remembered = get_remembered(version, workspace)
 
     repos = []
 
     for repo, info in repositories.items():
         expected = str(info["branch"]).strip()
-        repos.append(collect_repo_status(git_root, version, repo, expected))
+        row = collect_repo_status(git_root, version, repo, expected)
+
+        if row["error"] is None and is_work_branch(
+            repo, row["current"], expected, known, remembered,
+        ):
+            row["wip"] = True
+            path = repo_path(git_root, version, repo)
+
+            if _merged_into_expected(path, row["current"], expected):
+                row["merged_into"] = expected
+
+        repos.append(row)
 
     return {
         "project": data["project"],
@@ -223,6 +325,8 @@ def collect_sync(
     repositories = data.get("repositories", {})
     results = []
     needs_credentials = False
+    known = manifest_branches(git_root, version)
+    remembered = get_remembered(version, workspace)
 
     credentials = GitCredentials(provider=credentials_provider)
     total = len(repositories)
@@ -253,10 +357,15 @@ def collect_sync(
                 continue
 
             if current != expected:
-                result = _action_result(
-                    repo, "skipped",
-                    f"On branch '{current}', expected '{expected}'",
-                )
+                if is_work_branch(repo, current, expected, known, remembered):
+                    reason = (
+                        f"Work in progress on '{current}' "
+                        f"(sync only updates '{expected}')"
+                    )
+                else:
+                    reason = f"On branch '{current}', expected '{expected}'"
+
+                result = _action_result(repo, "skipped", reason)
                 results.append(result)
                 _progress_repo_done(progress_callback, result)
                 continue
@@ -385,15 +494,38 @@ def collect_switch(
     workspace: str,
     credentials_provider=None,
     progress_callback=None,
+    manifest: bool = False,
 ) -> dict:
     """
     Misma lógica que ``ows switch``. Devuelve resultados por repo.
+
+    Antes de mover nada, guarda las ramas de trabajo del workspace del que
+    se sale (el último al que se hizo switch, o el mejor del ranking).
+    Por defecto retoma las ramas recordadas de ``workspace``; con
+    ``manifest=True`` usa siempre la rama del YAML y olvida lo recordado.
     """
 
     data = load_workspace(git_root, version, workspace)
     repositories = data.get("repositories", {})
     results = []
     needs_credentials = False
+    known = manifest_branches(git_root, version)
+
+    leaving = get_active_workspace(version)
+
+    if leaving is None:
+        ranking = collect_current(git_root, version)["results"]
+        leaving = ranking[0]["workspace"] if ranking else None
+
+    saved_branches = {}
+
+    if leaving and not (manifest and leaving == workspace):
+        try:
+            saved_branches = snapshot_work_branches(git_root, version, leaving, known)
+        except FileNotFoundError:
+            saved_branches = {}
+
+    remembered = {} if manifest else get_remembered(version, workspace)
 
     credentials = GitCredentials(provider=credentials_provider)
     total = len(repositories)
@@ -423,8 +555,32 @@ def collect_switch(
                 _progress_repo_done(progress_callback, result)
                 continue
 
-            if current == expected:
-                result = _action_result(repo, "already-on-branch")
+            target = expected
+            resumed = False
+            notes = []
+            wanted = remembered.get(repo)
+
+            if wanted:
+                if local_branch_exists(path, wanted):
+                    target = wanted
+                    resumed = True
+                else:
+                    forget_repo(version, workspace, repo)
+                    notes.append(
+                        f"remembered branch '{wanted}' no longer exists locally"
+                    )
+
+            if resumed:
+                notes.insert(0, "work in progress")
+
+                if _merged_into_expected(path, target, expected):
+                    notes.insert(1, f"already merged into {expected}")
+
+            if current == target:
+                result = _action_result(
+                    repo, "already-on-branch",
+                    " · ".join(notes) or None,
+                )
                 results.append(result)
                 _progress_repo_done(progress_callback, result)
                 continue
@@ -465,7 +621,7 @@ def collect_switch(
                 _progress_repo_done(progress_callback, result)
                 continue
 
-            if not local_branch_exists(path, expected):
+            if not resumed and not local_branch_exists(path, expected):
                 _progress_repo_step(
                     progress_callback, repo,
                     f"Fetching origin/{expected}",
@@ -497,9 +653,9 @@ def collect_switch(
 
             _progress_repo_step(
                 progress_callback, repo,
-                f"Checking out {expected}",
+                f"Checking out {target}",
             )
-            _, error = checkout(path, expected)
+            _, error = checkout(path, target)
 
             if error:
                 result = _action_result(repo, "failed", error)
@@ -507,12 +663,22 @@ def collect_switch(
                 _progress_repo_done(progress_callback, result)
                 continue
 
+            reason = f"'{current}' → '{target}'"
+
+            if notes:
+                reason = f"{reason} ({' · '.join(notes)})"
+
             result = _action_result(
-                repo, "switched",
-                f"'{current}' → '{expected}'",
+                repo, "resumed" if resumed else "switched",
+                reason,
             )
             results.append(result)
             _progress_repo_done(progress_callback, result)
+
+        if manifest:
+            forget_workspace(version, workspace)
+
+        set_active_workspace(version, workspace)
     finally:
         credentials.cleanup()
 
@@ -520,6 +686,9 @@ def collect_switch(
         "project": data["project"],
         "version": data["version"],
         "action": "switch",
+        "mode": "manifest" if manifest else "resume",
+        "left_workspace": leaving,
+        "saved_branches": saved_branches,
         "results": results,
         "needs_credentials": needs_credentials,
     }

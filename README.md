@@ -72,7 +72,8 @@ El ícono indica de un vistazo si el repo calificaría para `ows sync`:
 |-------|-------------|
 | ✅ | Rama correcta, limpio, nada por pushear — `sync` no tendría nada que hacer o lo actualizaría sin drama. |
 | 🟡 | Rama correcta, pero algo bloquearía el `sync` (cambios sin commitear y/o commits sin pushear). |
-| ⚠️ | Rama distinta a la esperada por el manifest. |
+| 🔧 | Trabajo en curso: rama de feature/fix recordada para el workspace (o fuera de todos los manifests). Si ya está mergeada en la esperada, se indica `already in <rama>`. |
+| ⚠️ | Rama distinta a la esperada por el manifest (y no es trabajo en curso). |
 
 ```
 $ ows status 19 BESTWAY
@@ -112,12 +113,32 @@ $ ows current 19
 Current workspace: PRISSA
 ```
 
-### `ows switch <version> <workspace>`
+### `ows switch <version> <workspace> [--manifest]`
 
-Deja cada repo del manifest en la rama esperada (`git checkout`).
+Deja cada repo del workspace en su rama de trabajo recordada o, si no hay,
+en la rama esperada por el manifest (`git checkout`).
+
+**Memoria de ramas de trabajo.** Antes de mover nada, `switch` guarda las
+ramas de trabajo en curso del workspace que dejas (el último al que hiciste
+switch o, la primera vez, el mejor del ranking): cualquier repo que esté en
+una rama distinta a la del manifest y que no sea la rama de otro manifest
+de la versión. Al volver a ese workspace, esas ramas se retoman (🔧
+`resumed`) en vez de la del YAML. Si una rama recordada ya no existe en
+local, usa la del manifest y la olvida. El estado vive en
+`~/.local/state/ows/state.json` (o `$XDG_STATE_HOME/ows/`, o
+`OWS_STATE_FILE`); no se versiona.
+
+`--manifest` ignora lo recordado, deja todo en las ramas del YAML y
+olvida las ramas de trabajo de ese workspace (útil al terminar una
+feature). Como pista local, sin red, se avisa `already merged into <rama>`
+cuando la rama de trabajo ya está contenida en `origin/<rama esperada>`.
+
 Misma política de seguridad que `sync`: no toca un repo sucio ni uno
-con commits locales sin pushear. **No hace pull** — eso sigue siendo
-`ows sync`.
+con commits locales sin pushear — **tampoco con `--manifest`**. Esos
+repos se quedan en su rama actual y se reportan como `skipped` con el
+motivo; para llevarlos a la rama del YAML, primero haz commit/stash o
+push y repite el switch. Al final se imprime cuántos repos se saltaron.
+**No hace pull** — eso sigue siendo `ows sync`.
 
 Si la rama esperada ya está en local, el checkout es offline. Solo
 hace fetch (con el mismo fallback de credenciales que `sync`) cuando
@@ -130,6 +151,13 @@ $ ows switch 19 BESTWAY
 ✅ addons-l10n_mx                switched — '19.0' → '19.0-BESTWAY'
 ⏭️  addons-account                 skipped — 2 unpushed commit(s) on 'IMP_...'
 ⏭️  addons-pos                     skipped — Uncommitted changes in working tree
+
+⚠️  2 repo(s) skipped/failed — see the reasons above.
+
+$ ows switch 19 PRISSA        # más tarde, de vuelta a BESTWAY:
+$ ows switch 19 BESTWAY
+Saved work branches of PRISSA: ...
+🔧 addons-account                 resumed — '19.0' → 'IMP_...' (work in progress)
 ```
 
 El flujo típico al cambiar de cliente:
@@ -145,14 +173,19 @@ UI web local en `http://127.0.0.1:8765` (o el puerto que indiques).
 Incluye los cuatro comandos probados del CLI:
 
 - **Ranking** (`current`) — qué workspace coincide más con tus ramas
-- **Status** — tabla por repo con los mismos íconos ✅ 🟡 ⚠️; columna
+- **Status** — tabla por repo con los mismos íconos ✅ 🔧 🟡 ⚠️; columna
   **Working tree** con el detalle de archivos cuando hay cambios locales;
   botones de copiar en **Repo** y **Current**
-- **Switch** / **Sync** — con confirmación; misma política de skip que
-  en terminal (no toca repos sucios ni con unpushed). Mientras corre, la
+- **Switch** / **Switch to manifest** / **Sync** — con confirmación
+  (Switch retoma ramas de trabajo; Switch to manifest equivale a
+  `--manifest`); misma política de skip que
+  en terminal (no toca repos sucios ni con unpushed, ni siquiera con
+  Switch to manifest). Mientras corre, la
   tabla **Last action** muestra progreso en vivo: repos pendientes (⏳),
   el repo en curso (🔄) con el paso actual (`Fetching origin/…`, `Pulling…`,
-  `Checking out…`, etc.) y los ya terminados con su resultado
+  `Checking out…`, etc.) y los ya terminados con su resultado. Si algún
+  repo se saltó o falló, el aviso final sale como advertencia con el
+  conteo (`N skipped/failed (see Last action)`) en vez de "done"
 
 Si usas HTTPS sin SSH/credential helper, rellena username/token en la
 UI antes de Switch/Sync (no se guardan en disco).
@@ -203,6 +236,7 @@ necesita.
 ```
 ows              # entrypoint: parseo de argv, usage()
 service.py       # collect_* (status, current, sync, switch) — datos, sin print
+state.py         # estado local: workspace activo y ramas de trabajo recordadas
 commands.py      # status(), current(), switch(), sync() — CLI sobre service
 ui.py            # NiceGUI: ows ui en 127.0.0.1:8765
 workspace.py     # lectura de manifests YAML
@@ -220,6 +254,10 @@ utils.py         # funciones de impresión (print_repo_status, print_action_resu
   de raíz (y detectar otros repos en la misma situación) queda pendiente para
   un futuro comando de diagnóstico (`ows doctor`, ver CHANGELOG).
 - Asume un único remoto llamado `origin` en todos los repos.
+- El aviso "already merged" usa el último `origin/<rama>` conocido (no hace
+  fetch) y no detecta squash/rebase merges.
+- Un `git checkout` manual fuera de `ows` no actualiza el workspace activo;
+  la memoria se toma de lo que hay en disco al hacer el siguiente `switch`.
 
 ## Changelog
 

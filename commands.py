@@ -21,6 +21,8 @@ def status(git_root: Path, version: str, workspace: str):
             ahead=row["ahead"],
             dirty=row["dirty"],
             tree_changes=row.get("tree_changes"),
+            wip=row.get("wip", False),
+            merged_into=row.get("merged_into"),
         )
 
 
@@ -29,10 +31,35 @@ def _print_action_payload(payload: dict):
     print()
     print(f"Workspace : {payload['project']}")
     print(f"Version   : {payload['version']}")
+
+    if payload.get("mode") == "manifest":
+        print("Mode      : manifest (YAML branches, work branches forgotten)")
+    elif payload.get("mode") == "resume":
+        print("Mode      : resume work branches")
+
     print()
+
+    saved = payload.get("saved_branches") or {}
+
+    if saved:
+        print(f"Saved work branches of {payload['left_workspace']}:")
+
+        for repo, branch in saved.items():
+            print(f"    {repo:<30} {branch}")
+
+        print()
 
     for row in payload["results"]:
         print_action_result(row["repo"], row["status"], row.get("reason"))
+
+    skipped = sum(
+        1 for row in payload["results"]
+        if row["status"] in ("skipped", "failed")
+    )
+
+    if skipped:
+        print()
+        print(f"⚠️  {skipped} repo(s) skipped/failed — see the reasons above.")
 
     if payload.get("needs_credentials"):
         print()
@@ -54,14 +81,17 @@ def sync(git_root: Path, version: str, workspace: str):
     _print_action_payload(collect_sync(git_root, version, workspace))
 
 
-def switch(git_root: Path, version: str, workspace: str):
+def switch(git_root: Path, version: str, workspace: str, manifest: bool = False):
     """
-    Cambia (git checkout) cada repo del workspace a la rama esperada
-    por el manifest. No toca repos con cambios sin commitear ni con
-    commits locales sin pushear. No hace pull — eso es ``sync``.
+    Cambia (git checkout) cada repo del workspace a su rama de trabajo
+    recordada o, si no hay, a la del manifest (``manifest=True`` fuerza
+    siempre la del manifest). No toca repos con cambios sin commitear ni
+    con commits locales sin pushear. No hace pull — eso es ``sync``.
     """
 
-    _print_action_payload(collect_switch(git_root, version, workspace))
+    _print_action_payload(
+        collect_switch(git_root, version, workspace, manifest=manifest)
+    )
 
 
 def current(git_root: Path, version: str):
