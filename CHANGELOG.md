@@ -7,6 +7,10 @@ interna, no un paquete publicado); las entradas se agrupan por fecha.
 
 ## [Unreleased]
 
+### Added
+- Tooltips en los botones de la UI (Refresh, Switch, Switch to manifest,
+  Sync, Cancel/Run del diálogo y copiar) que recuerdan qué operación hacen.
+
 ## [2026-10-16] — switch: memoria de ramas de trabajo por workspace
 
 ### Added

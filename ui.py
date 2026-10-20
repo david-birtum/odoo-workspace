@@ -63,6 +63,23 @@ ACTION_LABEL = {
     "sync": "Sync",
 }
 
+ACTION_TOOLTIP = {
+    "switch": (
+        "Checkout each repo to its remembered work branch (🔧), or to the "
+        "manifest branch if none. Saves the work branches of the workspace "
+        "you leave. Skips dirty/unpushed repos. No pull."
+    ),
+    "switch-manifest": (
+        "Checkout every repo to the manifest (YAML) branch and forget the "
+        "remembered work branches of this workspace. Skips dirty/unpushed "
+        "repos. No pull."
+    ),
+    "sync": (
+        "git pull --ff-only on repos that are on the manifest branch, clean "
+        "and with nothing to push. Everything else is skipped."
+    ),
+}
+
 RANKING_COLUMNS = [
     {"name": "rank", "label": "", "field": "rank", "align": "left"},
     {"name": "workspace", "label": "Workspace", "field": "workspace", "align": "left"},
@@ -124,7 +141,7 @@ def _attach_copy_slots(table, *columns: str) -> None:
                         "click",
                         js_handler=_COPY_JS,
                         handler=_notify_copied,
-                    ).tooltip("Copy")
+                    ).tooltip("Copy to clipboard")
 
 
 def _notes(row: dict) -> str:
@@ -263,15 +280,23 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
                 label="Workspace",
                 value=workspace_value,
             ).classes("w-64")
-            ui.button("Refresh", on_click=lambda: refresh_all())
+            ui.button("Refresh", on_click=lambda: refresh_all()).tooltip(
+                "Re-read branches and working trees from disk (no git fetch)"
+            )
 
         with ui.row().classes("q-gutter-md mt-2"):
-            ui.button("Switch", on_click=lambda: confirm_action("switch")).props("color=primary")
+            ui.button(
+                "Switch",
+                on_click=lambda: confirm_action("switch"),
+            ).props("color=primary").tooltip(ACTION_TOOLTIP["switch"])
             ui.button(
                 "Switch to manifest",
                 on_click=lambda: confirm_action("switch-manifest"),
-            ).props("color=primary outline")
-            ui.button("Sync", on_click=lambda: confirm_action("sync")).props("color=secondary")
+            ).props("color=primary outline").tooltip(ACTION_TOOLTIP["switch-manifest"])
+            ui.button(
+                "Sync",
+                on_click=lambda: confirm_action("sync"),
+            ).props("color=secondary").tooltip(ACTION_TOOLTIP["sync"])
 
         hint = ui.label().classes("mt-2")
         action_hint = ui.label().classes("text-grey")
@@ -508,8 +533,11 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
             confirm_title = ui.label().classes("text-h6")
             confirm_body = ui.label().classes("text-body2")
             with ui.row().classes("w-full justify-end q-gutter-sm mt-4"):
-                ui.button("Cancel", on_click=confirm_dialog.close).props("flat")
-                ui.button("Run", on_click=run_confirmed).props("color=primary")
+                ui.button("Cancel", on_click=confirm_dialog.close).props("flat").tooltip(
+                    "Close without changing anything"
+                )
+                with ui.button("Run", on_click=run_confirmed).props("color=primary"):
+                    run_tooltip = ui.tooltip()
 
         def confirm_action(action: str):
             version = version_sel.value
@@ -526,6 +554,7 @@ def start_ui(git_root: Path, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT)
                 "sync": "pull updates for",
             }
             confirm_title.set_text(f"Run {ACTION_LABEL[action].lower()}?")
+            run_tooltip.set_text(ACTION_TOOLTIP[action])
             confirm_body.set_text(
                 f"This will {verbs[action]} workspace {workspace} (Odoo {version}). "
                 "Dirty or unpushed repos are skipped, same as the CLI."
