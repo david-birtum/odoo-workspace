@@ -5,6 +5,26 @@ vive en `~/git_repos`. No es un módulo Odoo — es una herramienta de apoyo par
 el día a día del equipo, que compara y sincroniza el estado de git de varios
 repos contra un manifest declarativo por cliente.
 
+## Por qué existe (alternativas que no encajaban)
+
+En Birtum cada versión de Odoo (`13/` … `19/`) agrupa **decenas de repos git
+independientes** bajo `odoo/`. Cada cliente usa ramas distintas en esos mismos
+directorios; cambiar de cliente no es clonar de nuevo, sino **alinear ramas en
+todos los repos a la vez**, recordar en qué feature estabas y actualizar solo
+lo que está limpio y en la rama correcta. Antes de escribir `ows` se valoraron
+herramientas habituales en el ecosistema Odoo y en git; ninguna cubría ese flujo
+sin coste extra.
+
+| Enfoque | Qué resuelve bien | Por qué no alcanzaba aquí |
+|--------|-------------------|---------------------------|
+| **[git-aggregator](https://github.com/acsone/git-aggregator)** (OCA, también vía Doodba `repos.yaml`) | Reproducir un **árbol de addons** fiable: clonar, fetchear y **fusionar** remotes/commits en una rama agregada o un directorio de build. | El modelo es **un checkout fusionado**, no N repos vivos con historial propio. No hay `checkout` por cliente sobre carpetas ya existentes, ni memoria de ramas de trabajo, ni política “no tocar repos sucios / con unpushed”. Encaja en **CI e imagen Docker**, no en el ciclo diario dev ↔ cliente ↔ cliente en el mismo `~/git_repos`. |
+| **`git worktree`** | Varias ramas del **mismo** repo en directorios distintos sin re-checkout. | Es **por repositorio**. Un cliente implica muchos repos; multiplicar worktrees por cliente duplicaría árbol y mente (¿qué worktree corresponde a BESTWAY en `addons-sale`?). No responde “¿en qué cliente estoy?” ni cruza estado con un manifest. |
+| **Multiplexores (`gita`, `myrepos`, …)** | Ejecutar `git pull`, `status`, etc. en lote sobre una lista de repos. | No conocen el **workspace por cliente** (YAML en `workspace/`), el **ranking** de coincidencia de ramas, el **switch** coordinado con reglas de seguridad, ni el aviso de trabajo en curso (`🔧`) entre switches. Habría que mantener scripts ad hoc encima. |
+| **Submódulos / monorepo único** | Una sola raíz git con dependencias versionadas. | Contrario al layout actual: un repo por familia de addons, ramas por cliente, mismos paths años enteros. Migrar solo para orquestar ramas sería desproporcionado. |
+| **Solo aliases y scripts manuales** | Mínima dependencia. | Repiten lógica frágil (fetch de rama concreta cuando `remote.origin.fetch` está mal, skip si dirty, credenciales HTTPS una vez por corrida). `ows` concentra eso en un sitio con **CLI + UI local**. |
+
+`ows` asume el layout que ya usa el equipo: **un clone por repo, un manifest YAML por cliente**, y añade lo que faltaba en las opciones anteriores — `status` / `current` contra el manifest, `switch` con ramas de trabajo recordadas, `sync` con `pull --ff-only` solo donde es seguro, y diagnóstico visible (terminal o `ows ui`) sin re-agrupar ni re-clonar el mundo.
+
 ## Layout que asume
 
 ```
